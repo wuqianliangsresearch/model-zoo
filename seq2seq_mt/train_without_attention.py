@@ -15,6 +15,7 @@ import random
 
 import torch
 import torch.nn as nn
+from torch.nn import init
 from torch import optim
 import torch.nn.functional as F
 
@@ -124,6 +125,8 @@ input_lang, output_lang, pairs = prepareData('eng', 'fra', True)
 aa  = random.choice(pairs)
 print(aa)
 
+C_LEN = 1024
+
 class EncoderRNN(nn.Module):
     def __init__(self, input_size, hidden_size):
         super(EncoderRNN, self).__init__()
@@ -137,7 +140,7 @@ class EncoderRNN(nn.Module):
         embedded = self.embedding(input).view(1, 1, -1)
         output = embedded
         output, hidden = self.gru(output, hidden)
-#        print('EncoderRNN,output',output.shape,hidden.shape)
+        
         return output, hidden
 
     def initHidden(self):
@@ -145,24 +148,73 @@ class EncoderRNN(nn.Module):
 
 
 class DecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size):
+    def __init__(self, input_dim, hidden_size, output_size):
         super(DecoderRNN, self).__init__()
-        self.hidden_size = hidden_size
+        
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_size
+        self.output_dim = output_size
+        self.const_C_from_encoder = None
 
-        self.embedding = nn.Embedding(output_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
-        self.out = nn.Linear(hidden_size, output_size)
         self.softmax = nn.LogSoftmax(dim=1)
+        
+        self.Uz = nn.Linear( self.input_dim, self.hidden_dim)
+        self.Wz = nn.Linear( self.hidden_dim, self.hidden_dim)
+        self.Cz = nn.Linear( self.hidden_dim, self.hidden_dim)
+        
+        self.Ur = nn.Linear( self.input_dim, self.hidden_dim)
+        self.Wr = nn.Linear( self.hidden_dim, self.hidden_dim)
+        self.Cr = nn.Linear( self.hidden_dim, self.hidden_dim)
+        
+        self.Uh = nn.Linear( self.input_dim, self.hidden_dim)
+        self.Wh = nn.Linear( self.hidden_dim, self.hidden_dim)
+        self.Ch = nn.Linear( self.hidden_dim, self.hidden_dim)
+        
+        self.V = nn.Linear( self.hidden_dim, self.output_dim)
+
+        self.Tanh = nn.Tanh()
+        self.Sigmoid = nn.Sigmoid()
+        
+        init.xavier_normal(self.Wz.weight)
+        init.xavier_normal(self.Uz.weight)
+        init.xavier_normal(self.Cz.weight)
+        
+        init.xavier_normal(self.Wr.weight)
+        init.xavier_normal(self.Ur.weight)
+        init.xavier_normal(self.Cr.weight)
+        
+        init.xavier_normal(self.Wh.weight)
+        init.xavier_normal(self.Uh.weight)
+        init.xavier_normal(self.Ch.weight)
+        
+        init.xavier_normal(self.V.weight)
+        
+        self.embedding = nn.Embedding(self.output_dim, self.output_dim)
+        
+        
 
     def forward(self, input, hidden):
-        output = self.embedding(input).view(1, 1, -1)
-        output = F.relu(output)
-        output, hidden = self.gru(output, hidden)
-        output = self.softmax(self.out(output[0]))
+        
+        x = self.embedding(input).view(1, 1, -1).cuda()
+        
+        if self.const_C_from_encoder is None:
+            self.const_C_from_encoder = hidden
+            
+        # GRU Layer 1
+        z_t1 = self.Sigmoid(self.Uz(x) + self.Wz(hidden) + self.Cz(self.const_C_from_encoder))
+        r_t1 = self.Sigmoid(self.Ur(x) + self.Wr(hidden) + self.Cr(self.const_C_from_encoder))
+        # h ~
+        c_t1 = self.Tanh(self.Uh(x) + r_t1*(self.Wh(hidden) + self.Ch(self.const_C_from_encoder)) )
+
+        hidden = (torch.ones_like(z_t1) - z_t1) * c_t1 + z_t1 * hidden
+        
+        output = self.V(hidden)
+        output = self.softmax(output[0])
+        
         return output, hidden
 
     def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+        self.const_C_from_encoder = None
 
 
 def indexesFromSentence(lang, sentence):
@@ -190,19 +242,26 @@ teacher_forcing_ratio = 0.5
 
 
 def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
-    encoder_hidden = encoder.initHidden()
 
+    encoder_hidden = encoder.initHidden()
+    # 这边在第二次调用的时候，需要初始化，否则会有上一次的节点，被访问。
+    decoder.initHidden()
+    
+    
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
 
     input_length = input_tensor.size(0)
     target_length = target_tensor.size(0)
 
+    encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+
     loss = 0
 
     for ei in range(input_length):
-        encoder_output, encoder_hidden = encoder(
-            input_tensor[ei], encoder_hidden)
+        
+        encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
+        encoder_outputs[ei] = encoder_output[0, 0]
 
     decoder_input = torch.tensor([[SOS_token]], device=device)
 
@@ -215,27 +274,25 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     if use_teacher_forcing:
         # Teacher forcing: Feed the target as the next input
         for di in range(target_length):
-            decoder_output, decoder_hidden = decoder(
-                decoder_input, decoder_hidden)
+            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden)
             loss += criterion(decoder_output, target_tensor[di])
             decoder_input = target_tensor[di]  # Teacher forcing
 
     else:
         # Without teacher forcing: use its own predictions as the next input
         for di in range(target_length):
-            decoder_output, decoder_hidden = decoder(
-                decoder_input, decoder_hidden)
+            decoder_output, decoder_hidden = decoder( decoder_input, decoder_hidden )
             
             topv, topi = decoder_output.topk(1)
             # 下一轮输入，纯值类型
             decoder_input = topi.squeeze().detach()  # detach from history as input
-#            print("target_tensor[di]",decoder_output.shape, target_tensor[di].shape,decoder_output,target_tensor[di])
+            
             loss += criterion(decoder_output, target_tensor[di])
             if decoder_input.item() == EOS_token:
                 break
 
     loss.backward()
-
+    
     encoder_optimizer.step()
     decoder_optimizer.step()
 
@@ -278,7 +335,7 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
 
         loss = train(input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
-#        print(iter, loss)
+        print(iter, loss)
         
         print_loss_total += loss
         plot_loss_total += loss
@@ -312,7 +369,7 @@ def showPlot(points):
 
 hidden_size = 1000
 encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
-decoder1 = DecoderRNN(hidden_size, output_lang.n_words).to(device)
+decoder1 = DecoderRNN(output_lang.n_words ,hidden_size, output_lang.n_words).to(device)
 
 trainIters(encoder1, decoder1, 75000, print_every=50)
 
