@@ -278,7 +278,7 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
 
         loss = train(input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
-        print(iter, loss)
+#        print(iter, loss)
         
         print_loss_total += loss
         plot_loss_total += loss
@@ -314,7 +314,7 @@ hidden_size = 1000
 encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
 decoder1 = DecoderRNN(hidden_size, output_lang.n_words).to(device)
 
-trainIters(encoder1, decoder1, 75000, print_every=5000)
+trainIters(encoder1, decoder1, 75000, print_every=50)
 
 
 
