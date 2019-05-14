@@ -284,7 +284,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
-    #use_teacher_forcing =False
+#    use_teacher_forcing =False
     
     if use_teacher_forcing:
         # Teacher forcing: Feed the target as the next input
@@ -340,9 +340,10 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
 
 #    encoder_optimizer = optim.RMSprop(encoder.parameters(), lr=learning_rate, alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
 #    decoder_optimizer = optim.RMSprop(decoder.parameters(), lr=learning_rate, alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
-    encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
-    decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
-    
+    lrr_de = 1.0
+    encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate*lrr_de)
+    decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate*lrr_de)
+    print("learning rate:",learning_rate*lrr_de) 
     training_pairs = [tensorsFromPair(random.choice(pairs)) for i in range(n_iters)]
     criterion = nn.NLLLoss()
 
@@ -353,7 +354,7 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
 
         loss = train(input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
-        print(iter, loss)
+        #print(iter, loss)
         
         print_loss_total += loss
         plot_loss_total += loss
@@ -363,7 +364,7 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
             print_loss_total = 0
             print('%s (%d %d%%) %.4f' % (timeSince(start, iter / n_iters),
                                          iter, iter / n_iters * 100, print_loss_avg))
-
+       	lrr_de = iter / n_iters *1.0
         if iter % plot_every == 0:
             plot_loss_avg = plot_loss_total / plot_every
             plot_losses.append(plot_loss_avg)
