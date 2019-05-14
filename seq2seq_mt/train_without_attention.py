@@ -134,13 +134,14 @@ class EncoderRNN(nn.Module):
 
         self.embedding = nn.Embedding(input_size, hidden_size)
         self.gru = nn.GRU(hidden_size, hidden_size)
-
+        self.Tanh = nn.Tanh()
+        
     def forward(self, input, hidden):
         
         embedded = self.embedding(input).view(1, 1, -1)
         output = embedded
         output, hidden = self.gru(output, hidden)
-        
+       
         return output, hidden
 
     def initHidden(self):
@@ -172,6 +173,8 @@ class DecoderRNN(nn.Module):
         
         self.V = nn.Linear( self.hidden_dim, self.output_dim)
 
+        self.Cin = nn.Linear(C_LEN, self.hidden_dim)
+
         self.Tanh = nn.Tanh()
         self.Sigmoid = nn.Sigmoid()
         
@@ -189,6 +192,8 @@ class DecoderRNN(nn.Module):
         
         init.xavier_normal(self.V.weight)
         
+        init.xavier_normal(self.Cin.weight)
+        
         self.embedding = nn.Embedding(self.output_dim, self.output_dim)
         
         
@@ -198,7 +203,8 @@ class DecoderRNN(nn.Module):
         x = self.embedding(input).view(1, 1, -1).cuda()
         
         if self.const_C_from_encoder is None:
-            self.const_C_from_encoder = hidden
+            self.const_C_from_encoder = self.Tanh(self.Cin(hidden))
+            hidden = self.Tanh(self.Cin(hidden))
             
         # GRU Layer 1
         z_t1 = self.Sigmoid(self.Uz(x) + self.Wz(hidden) + self.Cz(self.const_C_from_encoder))
@@ -240,6 +246,10 @@ teacher_forcing_ratio = 0.5
 
 teacher_forcing_ratio = 0.5
 
+hidden_size = 1000
+Cout = nn.Linear( hidden_size, C_LEN).cuda()
+init.xavier_normal(Cout.weight)
+selftanh = nn.Tanh()
 
 def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
 
@@ -263,9 +273,14 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
         encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
         encoder_outputs[ei] = encoder_output[0, 0]
 
+
+    C = selftanh(Cout(encoder_hidden)).cuda()
+    
+    decoder_hidden = C
+    
     decoder_input = torch.tensor([[SOS_token]], device=device)
 
-    decoder_hidden = encoder_hidden
+
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
@@ -323,8 +338,11 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
     print_loss_total = 0  # Reset every print_every
     plot_loss_total = 0  # Reset every plot_every
 
-    encoder_optimizer = optim.RMSprop(encoder.parameters(), lr=learning_rate, alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
-    decoder_optimizer = optim.RMSprop(decoder.parameters(), lr=learning_rate, alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
+#    encoder_optimizer = optim.RMSprop(encoder.parameters(), lr=learning_rate, alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
+#    decoder_optimizer = optim.RMSprop(decoder.parameters(), lr=learning_rate, alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
+    encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
+    decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
+    
     training_pairs = [tensorsFromPair(random.choice(pairs)) for i in range(n_iters)]
     criterion = nn.NLLLoss()
 
@@ -367,7 +385,7 @@ def showPlot(points):
     plt.plot(points)
 
 
-hidden_size = 1000
+
 encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
 decoder1 = DecoderRNN(output_lang.n_words ,hidden_size, output_lang.n_words).to(device)
 
