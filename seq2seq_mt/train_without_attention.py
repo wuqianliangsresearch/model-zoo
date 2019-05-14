@@ -149,10 +149,10 @@ class EncoderRNN(nn.Module):
 
 
 class DecoderRNN(nn.Module):
-    def __init__(self, input_dim, hidden_size, output_size):
+    def __init__(self, hidden_size, output_size):
         super(DecoderRNN, self).__init__()
         
-        self.input_dim = input_dim
+        self.input_dim = output_size
         self.hidden_dim = hidden_size
         self.output_dim = output_size
         self.const_C_from_encoder = None
@@ -284,7 +284,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
-    use_teacher_forcing =False
+    #use_teacher_forcing =False
     
     if use_teacher_forcing:
         # Teacher forcing: Feed the target as the next input
@@ -387,7 +387,7 @@ def showPlot(points):
 
 
 encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
-decoder1 = DecoderRNN(output_lang.n_words ,hidden_size, output_lang.n_words).to(device)
+decoder1 = DecoderRNN(hidden_size, output_lang.n_words).to(device)
 
 trainIters(encoder1, decoder1, 75000, print_every=50)
 
