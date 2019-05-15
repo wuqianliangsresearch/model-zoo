@@ -239,14 +239,10 @@ def tensorsFromPair(pair):
     return (input_tensor, target_tensor)
 
 
-bb = tensorsFromPair(aa)
-
 teacher_forcing_ratio = 0.5
 
+hidden_size = 256
 
-teacher_forcing_ratio = 0.5
-
-hidden_size = 1000
 Cout = nn.Linear( hidden_size, C_LEN).cuda()
 init.xavier_normal(Cout.weight)
 selftanh = nn.Tanh()
@@ -386,11 +382,65 @@ def showPlot(points):
     plt.plot(points)
 
 
+def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
+
+    with torch.no_grad():
+        
+        input_tensor = tensorFromSentence(input_lang, sentence)
+        input_length = input_tensor.size()[0]
+        
+        encoder_hidden = encoder.initHidden()
+        # 这边在第二次调用的时候，需要初始化，否则会有上一次的节点，被访问。
+        decoder.initHidden()
+    
+        encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+    
+        decoded_words = []
+        
+        for ei in range(input_length):
+            
+            encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
+            encoder_outputs[ei] = encoder_output[0, 0]
+    
+    
+        C = selftanh(Cout(encoder_hidden)).cuda()
+        
+        decoder_hidden = C
+        
+        decoder_input = torch.tensor([[SOS_token]], device=device)
+    
+        for di in range(max_length):
+            
+            decoder_output, decoder_hidden = decoder( decoder_input, decoder_hidden )
+                
+            topv, topi = decoder_output.data.topk(1)
+            # 下一轮输入，纯值类型
+            decoder_input = topi.squeeze().detach()  # detach from history as input
+            
+            if topi.item() == EOS_token:
+                decoded_words.append('<EOS>')
+                break
+            else:
+                decoded_words.append(output_lang.index2word[topi.item()])
+                
+        return decoded_words
+
+def evaluateRandomly(encoder, decoder, n=10):
+    for i in range(n):
+        pair = random.choice(pairs)
+        print('input = ', pair[0])
+        print('true = ', pair[1])
+        output_words = evaluate(encoder, decoder, pair[0])
+        output_sentence = ' '.join(output_words)
+        print(' predicted = ', output_sentence)
+        print('')
+
+
 
 encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
 decoder1 = DecoderRNN(hidden_size, output_lang.n_words).to(device)
 
 trainIters(encoder1, decoder1, 75000, print_every=50)
 
-
+evaluateRandomly(encoder1, decoder1)
 
