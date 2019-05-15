@@ -4,7 +4,7 @@ Created on Thu Apr 25 16:34:50 2019
 
 @author: qianliang
 
-pytorch version char rnn generator
+pytorch version of "Learning Phrase Representations using RNN Encoder–Decoder for Statistical Machine Translation"
 """
 from __future__ import unicode_literals, print_function, division
 from io import open
