@@ -4,11 +4,12 @@ Created on Thu Apr 25 16:34:50 2019
 
 @author: qianliang
 
-pytorch version of "Learning Phrase Representations using RNN Encoder–Decoder for Statistical Machine Translation"
+pytorch version of "NEURAL MACHINE TRANSLATION BY JOINTLY LEARNING TO ALIGN AND TRANSLATE"
 """
 from __future__ import unicode_literals, print_function, division
 from io import open
 import unicodedata
+
 import re
 import random
 
@@ -16,6 +17,7 @@ import torch
 import torch.nn as nn
 from torch.nn import init
 from torch import optim
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -146,9 +148,9 @@ class EncoderRNN(nn.Module):
         return torch.zeros(1, 1, self.hidden_size, device=device)
 
 
-class DecoderRNN(nn.Module):
+class DecoderAttentionRNN(nn.Module):
     def __init__(self, hidden_size, output_size):
-        super(DecoderRNN, self).__init__()
+        super(DecoderAttentionRNN, self).__init__()
         
         self.input_dim = output_size
         self.hidden_dim = hidden_size
@@ -156,6 +158,7 @@ class DecoderRNN(nn.Module):
         self.const_C_from_encoder = None
 
         self.softmax = nn.LogSoftmax(dim=1)
+        self.a_sm = nn.LogSoftmax(dim=0)
         
         self.Uz = nn.Linear( self.input_dim, self.hidden_dim)
         self.Wz = nn.Linear( self.hidden_dim, self.hidden_dim)
@@ -169,7 +172,16 @@ class DecoderRNN(nn.Module):
         self.Wh = nn.Linear( self.hidden_dim, self.hidden_dim)
         self.Ch = nn.Linear( self.hidden_dim, self.hidden_dim)
         
+        self.Ua = nn.Linear( self.hidden_dim, self.hidden_dim)
+        self.Wa = nn.Linear( self.hidden_dim, self.hidden_dim)
+        self.Va = nn.Linear( self.hidden_dim, self.hidden_dim)
+        
+        
+        
+        
+        
         self.V = nn.Linear( self.hidden_dim, self.output_dim)
+
 
         self.Cin = nn.Linear(C_LEN, self.hidden_dim)
 
@@ -188,6 +200,12 @@ class DecoderRNN(nn.Module):
         init.xavier_normal_(self.Uh.weight)
         init.xavier_normal_(self.Ch.weight)
         
+        init.xavier_normal_(self.Wa.weight)
+        init.xavier_normal_(self.Ua.weight)
+        init.xavier_normal_(self.Va.weight)
+        
+        
+        
         init.xavier_normal_(self.V.weight)
         
         init.xavier_normal_(self.Cin.weight)
@@ -196,29 +214,29 @@ class DecoderRNN(nn.Module):
         
         
 
-    def forward(self, input, hidden):
+    def forward(self, input, hidden , encoder_outputs):
         
         x = self.embedding(input).view(1, 1, -1).cuda()
         
-        if self.const_C_from_encoder is None:
-            self.const_C_from_encoder = self.Tanh(self.Cin(hidden))
-            hidden = self.Tanh(self.Cin(hidden))
-            
-        # GRU Layer 1
-        z_t1 = self.Sigmoid(self.Uz(x) + self.Wz(hidden) + self.Cz(self.const_C_from_encoder))
-        r_t1 = self.Sigmoid(self.Ur(x) + self.Wr(hidden) + self.Cr(self.const_C_from_encoder))
-        # h ~
-        c_t1 = self.Tanh(self.Uh(x) + r_t1*(self.Wh(hidden) + self.Ch(self.const_C_from_encoder)) )
+        if hidden is None:
+            hidden = self.Wh(encoder_outputs[0]).view(1,1,-1).cuda()
+        
+        Anxn = self.Va(self.Tanh(self.Wa(hidden)+self.Ua(encoder_outputs)))
+        weighted_a = self.a_sm(Anxn)*encoder_outputs
 
+        Ci =torch.sum(weighted_a[0],dim=0).view(1,1,self.hidden_dim)
+        
+        # GRU Layer 1
+        z_t1 = self.Sigmoid(self.Uz(x) + self.Wz(hidden) + self.Cz(Ci))
+        r_t1 = self.Sigmoid(self.Ur(x) + self.Wr(hidden) + self.Cr(Ci))
+        # h ~
+        c_t1 = self.Tanh(self.Uh(x) + self.Wh(r_t1*hidden) + self.Ch(Ci) )
         hidden = (torch.ones_like(z_t1) - z_t1) * c_t1 + z_t1 * hidden
         
         output = self.V(hidden)
         output = self.softmax(output[0])
         
         return output, hidden
-
-    def initHidden(self):
-        self.const_C_from_encoder = None
 
 
 def indexesFromSentence(lang, sentence):
@@ -241,16 +259,13 @@ teacher_forcing_ratio = 0.5
 
 hidden_size = 256
 
-Cout = nn.Linear( hidden_size, C_LEN).cuda()
-init.xavier_normal(Cout.weight)
-selftanh = nn.Tanh()
+#Cout = nn.Linear( hidden_size, C_LEN).cuda()
+#init.xavier_normal(Cout.weight)
+#selftanh = nn.Tanh()
 
 def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
 
-    encoder_hidden = encoder.initHidden()
-    # 这边在第二次调用的时候，需要初始化，否则会有上一次的节点，被访问。
-    decoder.initHidden()
-    
+    encoder_hidden = encoder.initHidden() 
     
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
@@ -258,6 +273,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     input_length = input_tensor.size(0)
     target_length = target_tensor.size(0)
 
+    # Hj array for all Tx
     encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
     loss = 0
@@ -267,10 +283,11 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
         encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
         encoder_outputs[ei] = encoder_output[0, 0]
 
-
-    C = selftanh(Cout(encoder_hidden)).cuda()
-    
-    decoder_hidden = C
+#    print('encoder_outputs.shape',encoder_outputs.shape)
+#    C = selftanh(Cout(encoder_hidden)).cuda()
+#    
+#    decoder_hidden = C
+    decoder_hidden = None
     
     decoder_input = torch.tensor([[SOS_token]], device=device)
 
@@ -278,19 +295,19 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
-#    use_teacher_forcing =False
+    use_teacher_forcing =True
     
     if use_teacher_forcing:
         # Teacher forcing: Feed the target as the next input
         for di in range(target_length):
-            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden)
+            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden, encoder_outputs)
             loss += criterion(decoder_output, target_tensor[di])
             decoder_input = target_tensor[di]  # Teacher forcing
 
     else:
         # Without teacher forcing: use its own predictions as the next input
         for di in range(target_length):
-            decoder_output, decoder_hidden = decoder( decoder_input, decoder_hidden )
+            decoder_output, decoder_hidden = decoder( decoder_input, decoder_hidden,encoder_outputs )
             
             topv, topi = decoder_output.topk(1)
             # 下一轮输入，纯值类型
@@ -388,8 +405,7 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
         input_length = input_tensor.size()[0]
         
         encoder_hidden = encoder.initHidden()
-        # 这边在第二次调用的时候，需要初始化，否则会有上一次的节点，被访问。
-        decoder.initHidden()
+        decoder_hidden = None
     
         encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
     
@@ -401,15 +417,15 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
             encoder_outputs[ei] = encoder_output[0, 0]
     
     
-        C = selftanh(Cout(encoder_hidden)).cuda()
-        
-        decoder_hidden = C
+#        C = selftanh(Cout(encoder_hidden)).cuda()
+#        
+#        decoder_hidden = C
         
         decoder_input = torch.tensor([[SOS_token]], device=device)
     
         for di in range(max_length):
             
-            decoder_output, decoder_hidden = decoder( decoder_input, decoder_hidden )
+            decoder_output, decoder_hidden = decoder( decoder_input, decoder_hidden, encoder_outputs )
                 
             topv, topi = decoder_output.data.topk(1)
             # 下一轮输入，纯值类型
@@ -436,9 +452,9 @@ def evaluateRandomly(encoder, decoder, n=10):
 
 
 encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
-decoder1 = DecoderRNN(hidden_size, output_lang.n_words).to(device)
+decoder1 = DecoderAttentionRNN(hidden_size, output_lang.n_words).to(device)
 
-trainIters(encoder1, decoder1, 75000, print_every=50)
+trainIters(encoder1, decoder1, 100, print_every=50)
 
 evaluateRandomly(encoder1, decoder1)
 
