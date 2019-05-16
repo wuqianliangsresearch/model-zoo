@@ -283,10 +283,6 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
         encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
         encoder_outputs[ei] = encoder_output[0, 0]
 
-#    print('encoder_outputs.shape',encoder_outputs.shape)
-#    C = selftanh(Cout(encoder_hidden)).cuda()
-#    
-#    decoder_hidden = C
     decoder_hidden = None
     
     decoder_input = torch.tensor([[SOS_token]], device=device)
@@ -295,7 +291,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
-    use_teacher_forcing =True
+    use_teacher_forcing =False
     
     if use_teacher_forcing:
         # Teacher forcing: Feed the target as the next input
@@ -454,7 +450,7 @@ def evaluateRandomly(encoder, decoder, n=10):
 encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
 decoder1 = DecoderAttentionRNN(hidden_size, output_lang.n_words).to(device)
 
-trainIters(encoder1, decoder1, 100, print_every=50)
+trainIters(encoder1, decoder1, 75000, print_every=50)
 
 evaluateRandomly(encoder1, decoder1)
 
