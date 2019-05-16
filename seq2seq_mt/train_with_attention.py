@@ -133,7 +133,7 @@ class EncoderRNN(nn.Module):
         self.hidden_size = hidden_size
 
         self.embedding = nn.Embedding(input_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
+        self.gru = nn.GRU(hidden_size, hidden_size, bidirectional=True)
         self.Tanh = nn.Tanh()
         
     def forward(self, input, hidden):
@@ -145,7 +145,7 @@ class EncoderRNN(nn.Module):
         return output, hidden
 
     def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+        return torch.zeros(2, 1, self.hidden_size, device=device)
 
 
 class DecoderAttentionRNN(nn.Module):
@@ -162,17 +162,17 @@ class DecoderAttentionRNN(nn.Module):
         
         self.Uz = nn.Linear( self.input_dim, self.hidden_dim)
         self.Wz = nn.Linear( self.hidden_dim, self.hidden_dim)
-        self.Cz = nn.Linear( self.hidden_dim, self.hidden_dim)
+        self.Cz = nn.Linear( 2*self.hidden_dim, self.hidden_dim)
         
         self.Ur = nn.Linear( self.input_dim, self.hidden_dim)
         self.Wr = nn.Linear( self.hidden_dim, self.hidden_dim)
-        self.Cr = nn.Linear( self.hidden_dim, self.hidden_dim)
+        self.Cr = nn.Linear( 2*self.hidden_dim, self.hidden_dim)
         
         self.Uh = nn.Linear( self.input_dim, self.hidden_dim)
         self.Wh = nn.Linear( self.hidden_dim, self.hidden_dim)
-        self.Ch = nn.Linear( self.hidden_dim, self.hidden_dim)
+        self.Ch = nn.Linear( 2*self.hidden_dim, self.hidden_dim)
         
-        self.Ua = nn.Linear( self.hidden_dim, self.hidden_dim)
+        self.Ua = nn.Linear( 2*self.hidden_dim, self.hidden_dim)
         self.Wa = nn.Linear( self.hidden_dim, self.hidden_dim)
         self.Va = nn.Linear( self.hidden_dim, 1)
         
@@ -219,7 +219,7 @@ class DecoderAttentionRNN(nn.Module):
         x = self.embedding(input).view(1, 1, -1).cuda()
         
         if hidden is None:
-            hidden = self.Wh(encoder_outputs[0]).view(1,1,-1).cuda()
+            hidden = self.Wh(encoder_outputs[0][self.hidden_dim:2*self.hidden_dim]).view(1,1,-1).cuda()
 
         Eij = self.Va(self.Tanh(self.Wa(hidden)+self.Ua(encoder_outputs.squeeze(0))))
 #        print(Eij.shape)
@@ -229,7 +229,7 @@ class DecoderAttentionRNN(nn.Module):
         AijHj = aij*encoder_outputs
         
 #        print(AijHj.shape)
-        Ci =torch.sum(AijHj[0],dim=0).view(1,1,self.hidden_dim)
+        Ci =torch.sum(AijHj[0],dim=0).view(1,1,2*self.hidden_dim)
         
         # GRU Layer 1
         z_t1 = self.Sigmoid(self.Uz(x) + self.Wz(hidden) + self.Cz(Ci))
@@ -279,7 +279,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     target_length = target_tensor.size(0)
 
     # Hj array for all Tx
-    encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+    encoder_outputs = torch.zeros(max_length, 2*encoder.hidden_size, device=device)
 
     loss = 0
 
@@ -411,7 +411,7 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
         encoder_hidden = encoder.initHidden()
         decoder_hidden = None
     
-        encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+        encoder_outputs = torch.zeros(max_length, 2*encoder.hidden_size, device=device)
     
         decoded_words = []
         
@@ -443,7 +443,7 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
                 
         return decoded_words
 
-def evaluateRandomly(encoder, decoder, n=10):
+def evaluateRandomly(encoder, decoder, n=50):
     for i in range(n):
         pair = random.choice(pairs)
         print('input = ', pair[0])
@@ -458,7 +458,7 @@ def evaluateRandomly(encoder, decoder, n=10):
 encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
 decoder1 = DecoderAttentionRNN(hidden_size, output_lang.n_words).to(device)
 
-trainIters(encoder1, decoder1, 1000, print_every=50)
+trainIters(encoder1, decoder1, 100000, print_every=50)
 
 evaluateRandomly(encoder1, decoder1)
 
