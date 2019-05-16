@@ -158,7 +158,7 @@ class DecoderAttentionRNN(nn.Module):
         self.const_C_from_encoder = None
 
         self.softmax = nn.LogSoftmax(dim=1)
-        self.a_sm = nn.LogSoftmax(dim=0)
+        self.a_softmax = nn.LogSoftmax(dim=0)
         
         self.Uz = nn.Linear( self.input_dim, self.hidden_dim)
         self.Wz = nn.Linear( self.hidden_dim, self.hidden_dim)
@@ -174,7 +174,7 @@ class DecoderAttentionRNN(nn.Module):
         
         self.Ua = nn.Linear( self.hidden_dim, self.hidden_dim)
         self.Wa = nn.Linear( self.hidden_dim, self.hidden_dim)
-        self.Va = nn.Linear( self.hidden_dim, self.hidden_dim)
+        self.Va = nn.Linear( self.hidden_dim, 1)
         
         
         
@@ -220,11 +220,16 @@ class DecoderAttentionRNN(nn.Module):
         
         if hidden is None:
             hidden = self.Wh(encoder_outputs[0]).view(1,1,-1).cuda()
-        
-        Anxn = self.Va(self.Tanh(self.Wa(hidden)+self.Ua(encoder_outputs)))
-        weighted_a = self.a_sm(Anxn)*encoder_outputs
 
-        Ci =torch.sum(weighted_a[0],dim=0).view(1,1,self.hidden_dim)
+        Eij = self.Va(self.Tanh(self.Wa(hidden)+self.Ua(encoder_outputs.squeeze(0))))
+#        print(Eij.shape)
+        aij = self.a_softmax(Eij)
+        
+#        print(aij.shape)
+        AijHj = aij*encoder_outputs
+        
+#        print(AijHj.shape)
+        Ci =torch.sum(AijHj[0],dim=0).view(1,1,self.hidden_dim)
         
         # GRU Layer 1
         z_t1 = self.Sigmoid(self.Uz(x) + self.Wz(hidden) + self.Cz(Ci))
@@ -236,7 +241,7 @@ class DecoderAttentionRNN(nn.Module):
         output = self.V(hidden)
         output = self.softmax(output[0])
         
-        return output, hidden
+        return output, hidden, aij[0]
 
 
 def indexesFromSentence(lang, sentence):
@@ -282,13 +287,14 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
         
         encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
         encoder_outputs[ei] = encoder_output[0, 0]
-
+    
     decoder_hidden = None
     
     decoder_input = torch.tensor([[SOS_token]], device=device)
 
 
-
+    decoder_attentions = torch.zeros(max_length, max_length)
+    
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
     use_teacher_forcing =False
@@ -296,15 +302,17 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     if use_teacher_forcing:
         # Teacher forcing: Feed the target as the next input
         for di in range(target_length):
-            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden, encoder_outputs)
+            decoder_output, decoder_hidden, decoder_attention = decoder(decoder_input, decoder_hidden, encoder_outputs)
+            decoder_attentions[di] = decoder_attention.squeeze(1)
+            
             loss += criterion(decoder_output, target_tensor[di])
             decoder_input = target_tensor[di]  # Teacher forcing
 
     else:
         # Without teacher forcing: use its own predictions as the next input
         for di in range(target_length):
-            decoder_output, decoder_hidden = decoder( decoder_input, decoder_hidden,encoder_outputs )
-            
+            decoder_output, decoder_hidden ,decoder_attention= decoder( decoder_input, decoder_hidden,encoder_outputs )
+            decoder_attentions[di] = decoder_attention.squeeze(1)
             topv, topi = decoder_output.topk(1)
             # 下一轮输入，纯值类型
             decoder_input = topi.squeeze().detach()  # detach from history as input
@@ -450,7 +458,7 @@ def evaluateRandomly(encoder, decoder, n=10):
 encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
 decoder1 = DecoderAttentionRNN(hidden_size, output_lang.n_words).to(device)
 
-trainIters(encoder1, decoder1, 75000, print_every=50)
+trainIters(encoder1, decoder1, 2000, print_every=50)
 
 evaluateRandomly(encoder1, decoder1)
 
