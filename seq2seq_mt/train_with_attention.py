@@ -158,7 +158,7 @@ class DecoderAttentionRNN(nn.Module):
         self.const_C_from_encoder = None
 
         self.softmax = nn.LogSoftmax(dim=1)
-        self.a_softmax = nn.LogSoftmax(dim=0)
+        self.a_softmax = nn.Softmax(dim=0)
         
         self.Uz = nn.Linear( self.input_dim, self.hidden_dim)
         self.Wz = nn.Linear( self.hidden_dim, self.hidden_dim)
@@ -429,7 +429,7 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
     
         for di in range(max_length):
             
-            decoder_output, decoder_hidden = decoder( decoder_input, decoder_hidden, encoder_outputs )
+            decoder_output, decoder_hidden ,_ = decoder( decoder_input, decoder_hidden, encoder_outputs )
                 
             topv, topi = decoder_output.data.topk(1)
             # 下一轮输入，纯值类型
@@ -458,7 +458,7 @@ def evaluateRandomly(encoder, decoder, n=10):
 encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
 decoder1 = DecoderAttentionRNN(hidden_size, output_lang.n_words).to(device)
 
-trainIters(encoder1, decoder1, 2000, print_every=50)
+trainIters(encoder1, decoder1, 1000, print_every=50)
 
 evaluateRandomly(encoder1, decoder1)
 
