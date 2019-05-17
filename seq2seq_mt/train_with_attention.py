@@ -432,8 +432,9 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
     
         for di in range(max_length):
             
-            decoder_output, decoder_hidden , = decoder( decoder_input, decoder_hidden, encoder_outputs )
-                
+            decoder_output, decoder_hidden ,decoder_attention = decoder( decoder_input, decoder_hidden, encoder_outputs )
+            decoder_attentions[di] = decoder_attention.squeeze(1)
+            
             topv, topi = decoder_output.data.topk(1)
             # 下一轮输入，纯值类型
             decoder_input = topi.squeeze().detach()  # detach from history as input
@@ -451,7 +452,7 @@ def evaluateRandomly(encoder, decoder, n=50):
         pair = random.choice(pairs)
         print('input = ', pair[0])
         print('true = ', pair[1])
-        output_words = evaluate(encoder, decoder, pair[0])
+        output_words,_ = evaluate(encoder, decoder, pair[0])
         output_sentence = ' '.join(output_words)
         print(' predicted = ', output_sentence)
         print('')
@@ -461,12 +462,11 @@ def evaluateRandomly(encoder, decoder, n=50):
 encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
 decoder1 = DecoderAttentionRNN(hidden_size, output_lang.n_words).to(device)
 
-trainIters(encoder1, decoder1, 100000, print_every=50)
+trainIters(encoder1, decoder1, 100000, print_every=2000)
 
 evaluateRandomly(encoder1, decoder1)
 
-output_words, attentions = evaluate(
-    encoder1, decoder1, "je suis trop froid .")
+output_words, attentions = evaluate(encoder1, decoder1, "je suis trop froid .")
 plt.matshow(attentions.numpy())
 
 
