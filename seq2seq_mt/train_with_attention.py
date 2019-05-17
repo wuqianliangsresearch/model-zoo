@@ -25,6 +25,10 @@ SOS_token = 0
 EOS_token = 1
 
 
+MAX_LENGTH = 30
+hidden_size = 256
+
+
 class Lang:
     def __init__(self, name):
         self.name = name
@@ -84,7 +88,7 @@ def readLangs(lang1, lang2, reverse=False):
 
     return input_lang, output_lang, pairs
     
-MAX_LENGTH = 100
+
 
 eng_prefixes = (
     "i am ", "i m ",
@@ -109,7 +113,7 @@ def filterPairs(pairs):
 def prepareData(lang1, lang2, reverse=False):
     input_lang, output_lang, pairs = readLangs(lang1, lang2, reverse)
     print("Read %s sentence pairs" % len(pairs))
-    #pairs = filterPairs(pairs)
+    pairs = filterPairs(pairs)
     print("Trimmed to %s sentence pairs" % len(pairs))
     print("Counting words...")
     for pair in pairs:
@@ -160,26 +164,22 @@ class DecoderAttentionRNN(nn.Module):
         self.softmax = nn.LogSoftmax(dim=1)
         self.a_softmax = nn.Softmax(dim=0)
         
-        self.Uz = nn.Linear( self.input_dim, self.hidden_dim)
-        self.Wz = nn.Linear( self.hidden_dim, self.hidden_dim)
-        self.Cz = nn.Linear( 2*self.hidden_dim, self.hidden_dim)
+        self.Uz = nn.Linear( self.input_dim, self.hidden_dim )
+        self.Wz = nn.Linear( self.hidden_dim, self.hidden_dim )
+        self.Cz = nn.Linear( 2*self.hidden_dim, self.hidden_dim )
         
-        self.Ur = nn.Linear( self.input_dim, self.hidden_dim)
-        self.Wr = nn.Linear( self.hidden_dim, self.hidden_dim)
-        self.Cr = nn.Linear( 2*self.hidden_dim, self.hidden_dim)
+        self.Ur = nn.Linear( self.input_dim, self.hidden_dim )
+        self.Wr = nn.Linear( self.hidden_dim, self.hidden_dim )
+        self.Cr = nn.Linear( 2*self.hidden_dim, self.hidden_dim )
         
-        self.Uh = nn.Linear( self.input_dim, self.hidden_dim)
-        self.Wh = nn.Linear( self.hidden_dim, self.hidden_dim)
-        self.Ch = nn.Linear( 2*self.hidden_dim, self.hidden_dim)
+        self.Uh = nn.Linear( self.input_dim, self.hidden_dim )
+        self.Wh = nn.Linear( self.hidden_dim, self.hidden_dim )
+        self.Ch = nn.Linear( 2*self.hidden_dim, self.hidden_dim )
         
-        self.Ua = nn.Linear( 2*self.hidden_dim, self.hidden_dim)
-        self.Wa = nn.Linear( self.hidden_dim, self.hidden_dim)
+        self.Ua = nn.Linear( 2*self.hidden_dim, self.hidden_dim )
+        self.Wa = nn.Linear( self.hidden_dim, self.hidden_dim )
         self.Va = nn.Linear( self.hidden_dim, 1)
-        
-        
-        
-        
-        
+                
         self.V = nn.Linear( self.hidden_dim, self.output_dim)
 
 
@@ -216,32 +216,33 @@ class DecoderAttentionRNN(nn.Module):
 
     def forward(self, input, hidden , encoder_outputs):
         
-        x = self.embedding(input).view(1, 1, -1).cuda()
+        y = self.embedding(input).view(1, self.output_dim).cuda()
         
         if hidden is None:
-            hidden = self.Wh(encoder_outputs[0][self.hidden_dim:2*self.hidden_dim]).view(1,1,-1).cuda()
-
-        Eij = self.Va(self.Tanh(self.Wa(hidden)+self.Ua(encoder_outputs.squeeze(0))))
-#        print(Eij.shape)
+            hidden = self.Wh(encoder_outputs[0][self.hidden_dim:2*self.hidden_dim]).view(1,self.hidden_dim).cuda()
+        Eij = self.Va(self.Tanh(self.Wa(hidden)+self.Ua(encoder_outputs)))
+        #print("Eij.shape",Eij.shape,Eij)
         aij = self.a_softmax(Eij)
         
-#        print(aij.shape)
+        #print("aij.shape",aij.shape,aij)
         AijHj = aij*encoder_outputs
+        #print("encoder_outputs.shape",encoder_outputs.shape,encoder_outputs[0])
         
-#        print(AijHj.shape)
-        Ci =torch.sum(AijHj[0],dim=0).view(1,1,2*self.hidden_dim)
+        #print("aijhj shape",AijHj.shape,AijHj)
+        Ci =torch.sum(AijHj,dim=0).view(1,2*self.hidden_dim)
+        #print("Ci shape",Ci.shape)
         
         # GRU Layer 1
-        z_t1 = self.Sigmoid(self.Uz(x) + self.Wz(hidden) + self.Cz(Ci))
-        r_t1 = self.Sigmoid(self.Ur(x) + self.Wr(hidden) + self.Cr(Ci))
+        z_t1 = self.Sigmoid(self.Uz(y) + self.Wz(hidden) + self.Cz(Ci))
+        r_t1 = self.Sigmoid(self.Ur(y) + self.Wr(hidden) + self.Cr(Ci))
         # h ~
-        c_t1 = self.Tanh(self.Uh(x) + self.Wh(r_t1*hidden) + self.Ch(Ci) )
+        c_t1 = self.Tanh(self.Uh(y) + self.Wh(r_t1*hidden) + self.Ch(Ci) )
         hidden = (torch.ones_like(z_t1) - z_t1) * c_t1 + z_t1 * hidden
         
         output = self.V(hidden)
-        output = self.softmax(output[0])
+        output = self.softmax(output)
         
-        return output, hidden, aij[0]
+        return output, hidden, aij
 
 
 def indexesFromSentence(lang, sentence):
@@ -262,7 +263,7 @@ def tensorsFromPair(pair):
 
 teacher_forcing_ratio = 0.5
 
-hidden_size = 256
+
 
 #Cout = nn.Linear( hidden_size, C_LEN).cuda()
 #init.xavier_normal(Cout.weight)
@@ -286,7 +287,8 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     for ei in range(input_length):
         
         encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
-        encoder_outputs[ei] = encoder_output[0, 0]
+	#print(encoder_output,encoder_hidden)
+        encoder_outputs[ei] = encoder_output[0,0]
     
     decoder_hidden = None
     
@@ -297,7 +299,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
-    use_teacher_forcing =False
+    use_teacher_forcing =True
     
     if use_teacher_forcing:
         # Teacher forcing: Feed the target as the next input
@@ -414,6 +416,7 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
         encoder_outputs = torch.zeros(max_length, 2*encoder.hidden_size, device=device)
     
         decoded_words = []
+        decoder_attentions = torch.zeros(max_length, max_length)
         
         for ei in range(input_length):
             
@@ -429,7 +432,7 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
     
         for di in range(max_length):
             
-            decoder_output, decoder_hidden ,_ = decoder( decoder_input, decoder_hidden, encoder_outputs )
+            decoder_output, decoder_hidden , = decoder( decoder_input, decoder_hidden, encoder_outputs )
                 
             topv, topi = decoder_output.data.topk(1)
             # 下一轮输入，纯值类型
@@ -441,7 +444,7 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
             else:
                 decoded_words.append(output_lang.index2word[topi.item()])
                 
-        return decoded_words
+        return decoded_words,decoder_attentions[:di+1]
 
 def evaluateRandomly(encoder, decoder, n=50):
     for i in range(n):
@@ -461,4 +464,15 @@ decoder1 = DecoderAttentionRNN(hidden_size, output_lang.n_words).to(device)
 trainIters(encoder1, decoder1, 100000, print_every=50)
 
 evaluateRandomly(encoder1, decoder1)
+
+output_words, attentions = evaluate(
+    encoder1, decoder1, "je suis trop froid .")
+plt.matshow(attentions.numpy())
+
+
+
+
+
+
+
 
