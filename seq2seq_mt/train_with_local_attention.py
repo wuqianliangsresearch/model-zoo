@@ -251,18 +251,7 @@ class DecoderAttentionRNN(nn.Module):
             Pt = torch.min(torch.max(torch.tensor([self.D*1.0],requires_grad=True).cuda(),Pt),torch.tensor([MAX_LENGTH*1.0-1-self.D*1.0],requires_grad=True).cuda()).cuda().requires_grad_()
             lb = Pt - self.D
             rb = Pt + self.D
-            
-#            print("before Pt:lb:rb",Pt,lb,rb)
-            
-#            if lb < 0:
-#                rb= rb - lb
-#                lb=torch.tensor([[0.]],  requires_grad=True).cuda()
-#                
-#            if rb > MAX_LENGTH-1:
-#                lb = lb - (rb-MAX_LENGTH+1)
-#                rb = torch.tensor([[MAX_LENGTH-1]],  requires_grad=True).cuda()
-#            Pt = (lb+rb)/2
-            
+                   
             
             lbindex = lb[0][0].int().item()
             rbindex = rb[0][0].int().item()
