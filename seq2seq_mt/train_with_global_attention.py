@@ -20,6 +20,7 @@ import torch.nn as nn
 from torch.nn import init
 from torch import optim
 import torch.nn.functional as F
+torch.distributions.multivariate_normal.MultivariateNormal
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -197,6 +198,11 @@ class DecoderAttentionRNN(nn.Module):
         self.Wc = nn.Linear(MAX_LENGTH+1, 1)
         self.Ws = nn.Linear(self.hidden_dim, self.output_dim)
         
+        self.Wp = nn.Linear(self.hidden_dim, self.hidden_dim)
+        
+        self.Vp = nn.Linear(self.hidden_dim, 1)
+        
+        self.Wa_local = nn.Linear(self.hidden_dim, self.hidden_dim)
         
         init.xavier_normal_(self.Wa.weight)
         init.xavier_normal_(self.Wc.weight)
@@ -232,8 +238,19 @@ class DecoderAttentionRNN(nn.Module):
             ht_hat = self.tanh(torch.t(self.Wc(torch.t(Ct_ht))))
 #            print("oo",ht_hat.shape)
 
-        else: #"local"
-            pass
+        else: #"local" 
+            #Predictive alignment (local-p)
+            S = enc_outputs.size(0)
+            Pt = S*self.Vp(F.tanh(self.Wp(hidden[_num_layers-1])))
+            D = 2
+            m = torch.distributions.multivariate_normal.MultivariateNormal(Pt, D/2)
+            factor = m.sample()
+            # 1 x max len full attetion but need [pt-D,pt+D]
+            At = hidden[_num_layers-1].mm(torch.t(self.Wa_local(enc_outputs)))*factor
+            
+            
+            
+            
         
         output = self.logsoftmax(self.Ws(ht_hat))
 
