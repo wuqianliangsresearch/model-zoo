@@ -240,14 +240,15 @@ class DecoderAttentionRNN(nn.Module):
 
         else: #"local" 
             #Predictive alignment (local-p)
-            S = enc_outputs.size(0)
-            Pt = S*self.Vp(F.tanh(self.Wp(hidden[_num_layers-1])))
-            D = 2
-            m = torch.distributions.multivariate_normal.MultivariateNormal(Pt, D/2)
-            factor = m.sample()
-            # 1 x max len full attetion but need [pt-D,pt+D]
-            At = hidden[_num_layers-1].mm(torch.t(self.Wa_local(enc_outputs)))*factor
-            
+#            S = enc_outputs.size(0)
+#            Pt = S*self.Vp(F.tanh(self.Wp(hidden[_num_layers-1])))
+#            D = 2
+#            m = torch.distributions.multivariate_normal.MultivariateNormal(Pt, D/2)
+#            factor = m.sample()
+#            # 1 x max len full attetion but need [pt-D,pt+D]
+#            At = hidden[_num_layers-1].mm(torch.t(self.Wa_local(enc_outputs)))*factor
+#            
+            pass
             
             
             
