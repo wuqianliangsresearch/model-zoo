@@ -217,7 +217,7 @@ class DecoderAttentionRNN(nn.Module):
     def forward(self, input, hidden ,C , ht_hat , enc_outputs):
         
         y = self.embedding(input).view(1, 1, self.hidden_dim)
-                      # 
+        self.sigmoid = nn.Sigmoid()
         # feed input
         if _feed_input:
 #            print(y.shape,ht_hat.shape)
@@ -247,8 +247,8 @@ class DecoderAttentionRNN(nn.Module):
         else: #"local" 
             #Predictive alignment (local-p)
             
-#            Pt = torch.floor(MAX_LENGTH*self.Vp(F.tanh(self.Wp(hidden[_num_layers-1]))))
-            Pt = torch.min(torch.max(torch.tensor([self.D*1.0],requires_grad=True).cuda(),torch.floor(MAX_LENGTH*self.Vp(F.tanh(self.Wp(hidden[_num_layers-1]))))),torch.tensor([MAX_LENGTH*1.0-1-self.D*1.0],requires_grad=True).cuda()).cuda().requires_grad_()
+            Pt = torch.floor(MAX_LENGTH*self.sigmoid(self.Vp(F.tanh(self.Wp(hidden[_num_layers-1])))))
+            Pt = torch.min(torch.max(torch.tensor([self.D*1.0],requires_grad=True).cuda(),Pt),torch.tensor([MAX_LENGTH*1.0-1-self.D*1.0],requires_grad=True).cuda()).cuda().requires_grad_()
             lb = Pt - self.D
             rb = Pt + self.D
             
@@ -270,11 +270,11 @@ class DecoderAttentionRNN(nn.Module):
             print("after Pt,lb:rb",Pt,lbindex,rbindex)
             #at(s) Wa_local
             # nx2D+1
-            at_s = hidden[_num_layers-1].mm(torch.t(self.Wa_local(enc_out)))
+            at_s = F.softmax(hidden[_num_layers-1].mm(torch.t(self.Wa_local(enc_out))))
             
             # 1x2D+1
             #s 
-            s_arr = torch.arange(lbindex, rbindex+1).float().requires_grad_().cuda()
+            s_arr = torch.arange(lbindex, rbindex+1).float().cuda()
             disFactor = torch.exp(-1.0*((s_arr -Pt)**2/(2*(self.D*1.0/2)**2))).view(1,-1)
             
             # n x 2D+1  
