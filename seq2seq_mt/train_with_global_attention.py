@@ -6,7 +6,8 @@ Created on Thu Apr 25 16:34:50 2019
 
 train data from https://nlp.stanford.edu/projects/nmt/
 pytorch version of "Effective Approaches to Attention-based Neural Machine Translation"
-this  file mainly focus on local attention
+this  file mainly focus on "global" attention using a location-based function in which the alignment scores are computed from
+solely the target hidden state Ht
 """
 from __future__ import unicode_literals, print_function, division
 from io import open
@@ -238,16 +239,7 @@ class DecoderAttentionRNN(nn.Module):
             ht_hat = self.tanh(torch.t(self.Wc(torch.t(Ct_ht))))
 #            print("oo",ht_hat.shape)
 
-        else: #"local" 
-            #Predictive alignment (local-p)
-#            S = enc_outputs.size(0)
-#            Pt = S*self.Vp(F.tanh(self.Wp(hidden[_num_layers-1])))
-#            D = 2
-#            m = torch.distributions.multivariate_normal.MultivariateNormal(Pt, D/2)
-#            factor = m.sample()
-#            # 1 x max len full attetion but need [pt-D,pt+D]
-#            At = hidden[_num_layers-1].mm(torch.t(self.Wa_local(enc_outputs)))*factor
-#            
+        else: #"local"           
             pass
             
             
@@ -297,7 +289,6 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     input_length = input_tensor.size(0)
     target_length = target_tensor.size(0)
 
-    # Hj array for all Tx
     enc_outputs = torch.zeros(max_length, encoder.hidden_dim, device=device)
 
     loss = 0
@@ -435,30 +426,31 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
         input_tensor = tensorFromSentence(input_lang, sentence)
         input_length = input_tensor.size()[0]
         
-        encoder_hidden = encoder.initHidden()
-        decoder_hidden = None
-    
-        encoder_outputs = torch.zeros(max_length, 2*encoder.hidden_size, device=device)
+        enc_hidden,enc_c = encoder.initHidden()
+        dec_hidden,dec_c, dec_ht_hat = decoder.initHidden()
+        
+        enc_outputs = torch.zeros(max_length, encoder.hidden_dim, device=device)
     
         decoded_words = []
         decoder_attentions = torch.zeros(max_length, max_length)
         
         for ei in range(input_length):
             
-            encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
-            encoder_outputs[ei] = encoder_output[0, 0]
-    
-    
-#        C = selftanh(Cout(encoder_hidden)).cuda()
-#        
-#        decoder_hidden = C
-        
+            if input_reverse:
+                    
+                enc_output, (enc_hidden, enc_c) = encoder(input_tensor[input_length - ei -1], enc_hidden, enc_c)
+            else:
+                
+                enc_output, (enc_hidden, enc_c) = encoder(input_tensor[ei], enc_hidden, enc_c)
+            
+            enc_outputs[ei] = enc_hidden[_num_layers-1,0]
+
         decoder_input = torch.tensor([[SOS_token]], device=device)
     
         for di in range(max_length):
             
-            decoder_output, decoder_hidden ,decoder_attention = decoder( decoder_input, decoder_hidden, encoder_outputs )
-            decoder_attentions[di] = decoder_attention.squeeze(1)
+            decoder_output, (dec_hidden,dec_c),dec_ht_hat = decoder(decoder_input, dec_hidden, dec_c, dec_ht_hat, enc_outputs)
+#            decoder_attentions[di] = decoder_attention.squeeze(1)
             
             topv, topi = decoder_output.data.topk(1)
             # 下一轮输入，纯值类型
