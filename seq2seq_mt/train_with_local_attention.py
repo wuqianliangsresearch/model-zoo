@@ -214,6 +214,7 @@ class DecoderAttentionRNN(nn.Module):
         init.xavier_normal_(self.Wa_local.weight)
         init.xavier_normal_(self.Wp.weight)
         init.xavier_normal_(self.Vp.weight)
+        
 
     def forward(self, input, hidden ,C , ht_hat , enc_outputs):
         
@@ -278,7 +279,7 @@ class DecoderAttentionRNN(nn.Module):
             #print(disFactor.requires_grad)
             
             # 1 x M  At(s) 
-            alignweights = self.softmax(scores*disFactor)
+            alignweights = self.softmax(scores)*disFactor
             #print(alignweights.requires_grad)
             # M X n
             Ct = torch.t(alignweights)*enc_outputs
@@ -384,6 +385,12 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
                 break
 
     loss.backward()
+    
+    
+    # Clip gradients: gradients are modified in place
+    _ = torch.nn.utils.clip_grad_norm_(encoder.parameters(), 10)
+    _ = torch.nn.utils.clip_grad_norm_(decoder.parameters(), 10)
+    
     
     encoder_optimizer.step()
     decoder_optimizer.step()
