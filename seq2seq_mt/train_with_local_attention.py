@@ -114,8 +114,8 @@ eng_prefixes = (
 
 def filterPair(p):
     return len(p[0].split(' ')) < MAX_LENGTH and \
-        len(p[1].split(' ')) < MAX_LENGTH and \
-        p[1].startswith(eng_prefixes)
+        len(p[1].split(' ')) < MAX_LENGTH #and \
+        #p[1].startswith(eng_prefixes)
 
 
 def filterPairs(pairs):
@@ -182,10 +182,11 @@ class DecoderAttentionRNN(nn.Module):
         self.hidden_dim = hidden_size
         self.output_dim = output_size
         
-        self.D =2
+        self.D =10
         
         self.tanh = nn.Tanh()
         self.logsoftmax = nn.LogSoftmax(dim=1)
+        self.softmax = nn.Softmax(dim=1)
         
         self.embedding = nn.Embedding(self.input_dim, self.hidden_dim)
         if _feed_input:
@@ -197,10 +198,7 @@ class DecoderAttentionRNN(nn.Module):
         
         self.Wa = nn.Linear(self.hidden_dim, MAX_LENGTH)
         
-        if _attn_model == "global":
-            self.Wc = nn.Linear(MAX_LENGTH+1, 1)
-        else:#local
-            self.Wc = nn.Linear(2*self.D+2, 1)
+        self.Wc = nn.Linear(MAX_LENGTH+1, 1)
             
         self.Ws = nn.Linear(self.hidden_dim, self.output_dim)
         
@@ -213,6 +211,9 @@ class DecoderAttentionRNN(nn.Module):
         init.xavier_normal_(self.Wa.weight)
         init.xavier_normal_(self.Wc.weight)
         init.xavier_normal_(self.Ws.weight)
+        init.xavier_normal_(self.Wa_local.weight)
+        init.xavier_normal_(self.Wp.weight)
+        init.xavier_normal_(self.Vp.weight)
 
     def forward(self, input, hidden ,C , ht_hat , enc_outputs):
         
@@ -246,34 +247,44 @@ class DecoderAttentionRNN(nn.Module):
 
         else: #"local" 
             #Predictive alignment (local-p)
+            Ht = hidden[_num_layers-1]
+            Pt = torch.floor((MAX_LENGTH-1)*self.sigmoid(self.Vp(F.tanh(self.Wp(Ht)))))
+            #print(Pt.requires_grad)
+            #print("Pt:",Pt)
             
-            Pt = torch.floor(MAX_LENGTH*self.sigmoid(self.Vp(F.tanh(self.Wp(hidden[_num_layers-1])))))
-            Pt = torch.min(torch.max(torch.tensor([self.D*1.0],requires_grad=True).cuda(),Pt),torch.tensor([MAX_LENGTH*1.0-1-self.D*1.0],requires_grad=True).cuda()).cuda().requires_grad_()
-            lb = Pt - self.D
-            rb = Pt + self.D
+            lbindex = Pt[0][0].int().item() - self.D
+            rbindex = Pt[0][0].int().item() + self.D
                    
+            lbindex = max(0,lbindex)
+            rbindex = min(MAX_LENGTH-1,rbindex)
             
-            lbindex = lb[0][0].int().item()
-            rbindex = rb[0][0].int().item()
-            enc_out = enc_outputs[lbindex:rbindex+1,]
-            print("after Pt,lb:rb",Pt,lbindex,rbindex)
-            #at(s) Wa_local
-            # nx2D+1
-            at_s = F.softmax(hidden[_num_layers-1].mm(torch.t(self.Wa_local(enc_out))))
+            # scores ht hs
+            # 1 x M
+            scores = Ht.mm(torch.t(self.Wa_local(enc_outputs)))
+            #print(scores.requires_grad)
+            
             
             # 1x2D+1
-            #s 
-            s_arr = torch.arange(lbindex, rbindex+1).float().cuda()
-            disFactor = torch.exp(-1.0*((s_arr -Pt)**2/(2*(self.D*1.0/2)**2))).view(1,-1)
+            #s = torch.arange(lbindex, rbindex+1).float().cuda()
+            s = torch.arange(0, MAX_LENGTH).float().cuda()
+            s[0:lbindex] = 0.0;
+            s[rbindex+1:MAX_LENGTH] = 0.0;
+            # s - Pt
+            #print(s.shape,s)
+            # 1xM
+            disFactor = torch.exp(-1.0*((s -Pt)**2/(2*(self.D/2.0)**2))).view(1,-1)
+
             
-            # n x 2D+1  
-            Align_ht_hs = at_s*disFactor
-            # 2D+1 X n
-            Ct = torch.t(Align_ht_hs)*enc_out
-            # 2D+2 X n 
+            #print(disFactor.requires_grad)
+            
+            # 1 x M  At(s) 
+            alignweights = self.softmax(scores*disFactor)
+            #print(alignweights.requires_grad)
+            # M X n
+            Ct = torch.t(alignweights)*enc_outputs
+            # M+1 X n 
             Ct_ht = torch.cat((Ct,hidden[_num_layers-1]),dim=0)
-#            print(enc_out.shape, at_s.shape, disFactor.shape, Align_ht_hs.shape, Ct.shape, Ct_ht.shape)
-            # 
+
             # 1x hidden
             ht_hat = self.tanh(torch.t(self.Wc(torch.t(Ct_ht))))
             
