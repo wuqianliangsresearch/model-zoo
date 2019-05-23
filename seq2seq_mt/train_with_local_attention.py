@@ -480,7 +480,7 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
         encoder_hidden = encoder.initHidden()
         decoder_hidden = None
     
-        encoder_outputs = torch.zeros(max_length, 2*encoder.hidden_size, device=device)
+        encoder_outputs = torch.zeros(max_length, 2*encoder.hidden_dim, device=device)
     
         decoded_words = []
         decoder_attentions = torch.zeros(max_length, max_length)
