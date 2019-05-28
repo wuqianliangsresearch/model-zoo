@@ -28,7 +28,7 @@ def splitSentence(paragraph):
 
 torch.manual_seed(1)     # reproducible
 MINIBATCH_SIZE = 64    # mini batch size
-
+unknown_token = "UNK"
 
 vcab_frq_limit = 5
 
@@ -61,8 +61,6 @@ def readListFromFile(filename):
             ret.append(word)
         
     return ret
-
-unknown_token = "UNK"
 
 class LangModel:
     def __init__(self, name):
@@ -108,71 +106,30 @@ class LangModel:
             self.n_words += 1
             
     
-lm = LangModel("yelp")
 
-def prepareDic(filename):
+
+def prepareDic(filename,lmodel):
     print("Generating dic...")
 
     f = open(filename, encoding='utf-8')
     line = f.readline()
     while line:
         dicline = json.loads(line)
-        tokened_sentence = lm.addSentence(dicline["text"])
+        tokened_sentence = lmodel.addSentence(dicline["text"])
         line = f.readline()
     f.close()
 
-    writeDicToFile(lm.word2index,"word2index.dic")
-    writeDicToFile(lm.index2word,"index2word.dic")
+    writeDicToFile(lmodel.word2index,"word2index.dic")
+    writeDicToFile(lmodel.index2word,"index2word.dic")
 
 
-#prepareDic("./sample5000.json")
+def main():
+    lm = LangModel("yelp")
+    prepareDic("./sample5000.json",lm)
+  
+if __name__ == '__main__':
+  main()
 
-lm = LangModel("tain")
-lm.index2word = readDicFromFile("index2word.dic")
-lm.word2index = readDicFromFile("word2index.dic")
-
-def getBatchData(filename, batch_num=64):
-    print("Reading lines...")
-
-    # Read the file and split into lines
-
-    f = open(filename, encoding='utf-8')
-    
-    line = f.readline()
-
-    while line:
-        
-        dataline = json.loads(line)
-        tokened_sentence = lm.addSentence(dataline["text"],True)
-
-        lm.x.append(tokened_sentence)
-        lm.y.append(dataline["stars"])
-        
-        if len(lm.x) == batch_num:
-            
-            x = []
-            
-            for i in range(0,len(lm.x)):
-                document = lm.x[i]
-                xx = []
-                for sentence in document:
-                    xx.append([lm.word2index[w] if w in lm.word2index else 2 for w in sentence])
-                x.append(xx)                        
-            yield x,lm.y
-            lm.x = []
-            lm.y = []
-
-        line = f.readline()
-        
-    f.close()
-    
-
-for  x, y in getBatchData("./sample5000.json", 3):
-    
-    print(x,y)
-
-    
-    break
 
 
 
