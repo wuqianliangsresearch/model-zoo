@@ -16,11 +16,21 @@ import torch
 import torch.utils.data as Data
 import torch.nn as nn
 
+import nltk
+import nltk.data
+ 
+def splitSentence(paragraph):
+    tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
+    sentences = tokenizer.tokenize(paragraph)
+    return sentences
+
+
+
 torch.manual_seed(1)     # reproducible
 MINIBATCH_SIZE = 64    # mini batch size
 
 
-vcab_frq_limit = 100
+vcab_frq_limit = 5
 
 def writeDicToFile(dic,filename):
     fw = open(filename,'w')
@@ -64,11 +74,18 @@ class LangModel:
         self.x = [] # review
         self.y = [] # rating
         
-    def addSentence(self, sentence, train = False):
+    def addSentence(self, sentence, trainOrDic = False):
+        
+        
+        if trainOrDic:
+            ret_token_sentences = []
+            sents = splitSentence(sentence.replace("\n\n",""))
+            for sent in sents:
+                tokened_sentence = nltk.word_tokenize(sent)
+                ret_token_sentences.append(tokened_sentence)
+            return ret_token_sentences
         
         tokened_sentence = nltk.word_tokenize(sentence)
-        if train:
-            return tokened_sentence
         
         for word in tokened_sentence:
             self.addWord(word)
@@ -122,40 +139,38 @@ def getBatchData(filename, batch_num=64):
     f = open(filename, encoding='utf-8')
     
     line = f.readline()
-    x_lengths = []
-    
+
     while line:
         
         dataline = json.loads(line)
         tokened_sentence = lm.addSentence(dataline["text"],True)
-        x_lengths.append(len(tokened_sentence))
+
         lm.x.append(tokened_sentence)
         lm.y.append(dataline["stars"])
         
-        if len(x_lengths) == batch_num:
-  
-            l_no = 0
-            x = np.zeros((len(x_lengths), max(x_lengths)))
-            for sent in lm.x:
-                # replace unk and to index
-                tokens = [lm.word2index[w] if w in lm.word2index else 2 for w in sent]
-                for i in range(len(tokens)):
-                    x[l_no, i] = int(tokens[i])
-                l_no += 1
-
-            yield x_lengths, x,lm.y
+        if len(lm.x) == batch_num:
+            
+            x = []
+            
+            for i in range(0,len(lm.x)):
+                document = lm.x[i]
+                xx = []
+                for sentence in document:
+                    xx.append([lm.word2index[w] if w in lm.word2index else 2 for w in sentence])
+                x.append(xx)                        
+            yield x,lm.y
             lm.x = []
             lm.y = []
-            x_lengths = []
-            
+
         line = f.readline()
         
     f.close()
     
 
-for x_lengths, x, y in getBatchData("./sample5000.json", MINIBATCH_SIZE):
+for  x, y in getBatchData("./sample5000.json", 3):
     
-    print(x_lengths, x, y)
+    print(x,y)
+
     
     break
 
