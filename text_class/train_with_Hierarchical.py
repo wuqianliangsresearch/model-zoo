@@ -180,7 +180,7 @@ def train(x, y, encoder1, encoder2, encoder1_optimizer, encoder2_optimizer, crit
             word_enc_outputs[j] = Si
         # whole doc si input
         encoder2_output, encoder2_hidden = encoder2(word_enc_outputs, encoder2_hidden)
-        print(encoder2_output,label_tensor)
+        #print(encoder2_output,label_tensor)
         loss += criterion(encoder2_output, label_tensor)
         
     loss.backward()
@@ -229,7 +229,7 @@ def trainIters(encoder1, encoder2, n_iters=1000, print_every=1000, plot_every=10
     criterion = nn.NLLLoss()
 
     iter =1
-    for  x, y in getBatchData("./sample5000.json", 1):
+    for  x, y in getBatchData("./yelp_academic_dataset_review.json",32):
         
 
         loss = train(x, y, encoder1, encoder2, encoder1_optimizer, encoder2_optimizer, criterion)
@@ -253,7 +253,7 @@ def trainIters(encoder1, encoder2, n_iters=1000, print_every=1000, plot_every=10
 
 
 
-trainIters(encoder1, encoder2, n_iters = 10000 , print_every=2000)
+trainIters(encoder1, encoder2, n_iters = 1000 , print_every=50)
 
 
 
