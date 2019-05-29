@@ -27,7 +27,7 @@ def splitSentence(paragraph):
 
 
 torch.manual_seed(1)     # reproducible
-MINIBATCH_SIZE = 64    # mini batch size
+#MINIBATCH_SIZE = 64    # mini batch size
 unknown_token = "UNK"
 
 vcab_frq_limit = 5
@@ -65,8 +65,8 @@ def readListFromFile(filename):
 class LangModel:
     def __init__(self, name):
         self.name = name
-        self.word2index = {}
-        self.word2count = {"SOS":0, "EOS":1, "UNK":2}
+        self.word2index = {"SOS":0, "EOS":1, "UNK":2}
+        self.word2count = {}
         self.index2word = {0: "SOS", 1: "EOS",2: "UNK"}
         self.n_words = 3  # Count SOS , EOS and UNK
         self.x = [] # review
