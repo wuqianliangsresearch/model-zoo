@@ -97,11 +97,8 @@ class HAN_word_enconder(nn.Module):
         output, hidden = self.gru(embedded, hidden)
         Uit = self.tanh(self.Ww(output))
         U = self.Uw(Uit).squeeze(2)
-#        print(U.shape)
         A = self.softmax(U)
-#        print(A.shape)
         Ait = A.view(-1,1,1)
-#        print(Ait.shape)
         Si = torch.sum(Ait*output,0)
 
         return Si, hidden
