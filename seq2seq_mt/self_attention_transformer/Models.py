@@ -23,7 +23,7 @@ class Transformer(nn.Module):
             n_head=8,  
             dropout=0.1):
         
-
+        super( Transformer, self ).__init__()
         self.encoder = Encoder(
             vocab_size = n_src_vocab,
             max_seq_len = len_max_seq,
@@ -59,12 +59,14 @@ class Transformer(nn.Module):
             self.encoder.src_word_emb.weight = self.decoder.tgt_word_emb.weight
 
     def forward(self, src_seq, src_lens, tgt_seq, tgt_lens):
- 
-        enc_output = self.encoder(src_seq, src_lens)
+        
+        # input  start , word_seq, output word_seq,end
+        tgt_seq, tgt_lens = tgt_seq[:, :-1], tgt_lens[:, :-1]
         
         dec_enc_attn_padding_mask = padding_mask(seq_k=src_seq, seq_q=tgt_seq)
-        
-        dec_output  = self.decoder(tgt_seq, tgt_lens, enc_output, dec_enc_attn_padding_mask)
+        enc_output,_ = self.encoder(src_seq, src_lens)
+
+        dec_output,_,_  = self.decoder(tgt_seq, tgt_lens, enc_output, dec_enc_attn_padding_mask)
         seq_logit = self.tgt_word_prj(dec_output) * self.x_logit_scale
 
         return seq_logit.view(-1, seq_logit.size(2))

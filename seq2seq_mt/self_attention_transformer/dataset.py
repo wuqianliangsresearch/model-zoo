@@ -19,7 +19,9 @@ def collate_fn(insts):
     batch_seq = np.array([
         inst + [Constants.PAD] * (max_len - len(inst))
         for inst in insts])
-
+    
+    
+#        input_pos = tensor([list(range(1, len + 1)) + [0] * (max_len - len) for len in input_len])
     # postion padding
     batch_pos = np.array([
         [pos_i+1 if w_i != Constants.PAD else 0

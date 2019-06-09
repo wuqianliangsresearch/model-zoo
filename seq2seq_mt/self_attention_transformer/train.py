@@ -34,7 +34,6 @@ def cal_loss(pred, gold, smoothing):
     ''' Calculate cross entropy loss, apply label smoothing if needed. '''
 
     gold = gold.contiguous().view(-1)
-
     if smoothing:
         eps = 0.1
         n_class = pred.size(1)
@@ -66,7 +65,7 @@ def train_epoch(model, training_data, optimizer, device, smoothing):
             desc='  - (Training)   ', leave=False):
 
         # prepare data
-        src_seq, src_len, tgt_seq, tgt_len = batch
+        src_seq, src_len, tgt_seq, tgt_len = map(lambda x: x.to(device), batch)
         gold = tgt_seq[:, 1:]
 
         # forward
