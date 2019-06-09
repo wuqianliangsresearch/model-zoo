@@ -67,13 +67,13 @@ class MultiHeadAttention(nn.Module):
 		# multi-head attention之后需要做layer norm
         self.layer_norm = nn.LayerNorm(model_dim)
 
-#        nn.init.normal_(self.linear_k.weight, mean=0, std=np.sqrt(2.0 / (model_dim + self.dim_per_head)))
-#        nn.init.normal_(self.linear_v.weight, mean=0, std=np.sqrt(2.0 / (model_dim + self.dim_per_head)))
-#        nn.init.normal_(self.linear_q.weight, mean=0, std=np.sqrt(2.0 / (model_dim + self.dim_per_head)))
+        nn.init.normal_(self.linear_k.weight, mean=0, std=np.sqrt(2.0 / (model_dim + self.dim_per_head)))
+        nn.init.normal_(self.linear_v.weight, mean=0, std=np.sqrt(2.0 / (model_dim + self.dim_per_head)))
+        nn.init.normal_(self.linear_q.weight, mean=0, std=np.sqrt(2.0 / (model_dim + self.dim_per_head)))
         
-        nn.init.xavier_normal_(self.linear_k.weight)
-        nn.init.xavier_normal_(self.linear_v.weight)
-        nn.init.xavier_normal_(self.linear_q.weight)
+#        nn.init.xavier_normal_(self.linear_k.weight)
+#        nn.init.xavier_normal_(self.linear_v.weight)
+#        nn.init.xavier_normal_(self.linear_q.weight)
         nn.init.xavier_normal_(self.linear_final.weight)
         
     def forward(self, key, value, query, attn_mask=None):
@@ -158,6 +158,10 @@ def padding_mask(seq_k, seq_q):
     pad_mask = seq_k.eq(Constants.PAD)
     pad_mask = pad_mask.unsqueeze(1).expand(-1, len_q, -1)  # shape [B, L_q, L_k]
     return pad_mask
+
+def get_non_pad_mask(seq):
+    assert seq.dim() == 2
+    return seq.ne(Constants.PAD).type(torch.float).unsqueeze(-1)
 
 
 def sequence_mask(seq):
@@ -251,14 +255,15 @@ class EncoderLayer(nn.Module):
         self.attention = MultiHeadAttention(model_dim, num_heads, dropout)
         self.feed_forward = PositionalWiseFeedForward(model_dim, ffn_dim, dropout)
 
-    def forward(self, inputs, attn_mask=None):
+    def forward(self, inputs, non_pad_mask=None, attn_mask=None):
 
         # self attention
         context, attention = self.attention(inputs, inputs, inputs, attn_mask)
-
+        context *= non_pad_mask
         # feed forward network
         output = self.feed_forward(context)
-
+        output *= non_pad_mask
+        
         return output, attention
 
 
@@ -284,16 +289,15 @@ class Encoder(nn.Module):
 
     def forward(self, inputs, inputs_len):
 
+        non_pad_mask = get_non_pad_mask(inputs)
         self_attention_mask = padding_mask(inputs, inputs)
         
         output = self.seq_embedding(inputs) # 映射到 seq_len x d_model
         output += self.pos_embedding(inputs_len)
 
-        
-
         attentions = []
         for encoder in self.encoder_layers:
-            output, attention = encoder(output, self_attention_mask)
+            output, attention = encoder(output, non_pad_mask, self_attention_mask)
             attentions.append(attention)
 
         return output, attentions
@@ -312,20 +316,22 @@ class DecoderLayer(nn.Module):
     def forward(self,
               dec_inputs,
               enc_outputs,
+              non_pad_mask = None,
               self_attn_mask=None,
               context_attn_mask=None):
         # self attention, all inputs are decoder inputs
         dec_output, self_attention = self.slf_attn(
           dec_inputs, dec_inputs, dec_inputs, self_attn_mask)
-
+        dec_output *= non_pad_mask
         # context attention
         # query is decoder's outputs, key and value are encoder's inputs
         dec_output, context_attention = self.enc_attn(
           enc_outputs, enc_outputs, dec_output, context_attn_mask)
-
+        dec_output *= non_pad_mask
+        
         # decoder's output, or context
         dec_output = self.feed_forward(dec_output)
-
+        dec_output *= non_pad_mask
         return dec_output, self_attention, context_attention
 
 
@@ -352,7 +358,7 @@ class Decoder(nn.Module):
 
     def forward(self, inputs, inputs_len, enc_output, context_attn_mask=None):
 
-
+        non_pad_mask = get_non_pad_mask(inputs)
         self_attention_padding_mask = padding_mask(inputs, inputs)
         self_subsequent_mask = sequence_mask(inputs)
         self_attn_mask = torch.gt((self_attention_padding_mask + self_subsequent_mask), 0)
@@ -364,7 +370,7 @@ class Decoder(nn.Module):
         context_attentions = []
         for decoder in self.decoder_layers:
             output, self_attn, context_attn = decoder(
-            output, enc_output, self_attn_mask, context_attn_mask)
+            output, enc_output, non_pad_mask, self_attn_mask, context_attn_mask)
             self_attentions.append(self_attn)
             context_attentions.append(context_attn)
 

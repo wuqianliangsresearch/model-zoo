@@ -15,6 +15,7 @@ import Constants as Constants
 from dataset import TranslationDataset, paired_collate_fn
 from Models import Transformer
 from Optim import ScheduledOptim
+from preprocess import *
 
 def cal_performance(pred, gold, smoothing=False):
     ''' Apply label smoothing if needed '''
@@ -68,6 +69,11 @@ def train_epoch(model, training_data, optimizer, device, smoothing):
         src_seq, src_len, tgt_seq, tgt_len = map(lambda x: x.to(device), batch)
         gold = tgt_seq[:, 1:]
 
+#        sssrc_idx2word = training_data.dataset._src_idx2word
+#        tttgt_idx2word = training_data.dataset._tgt_idx2word
+
+#        print(convert_idx_seq_to_instance(src_seq.cpu().numpy(),sssrc_idx2word))
+#        print(convert_idx_seq_to_instance(tgt_seq.cpu().numpy(),tttgt_idx2word))
         # forward
         optimizer.zero_grad()
         pred = model(src_seq, src_len, tgt_seq, tgt_len)
@@ -75,7 +81,9 @@ def train_epoch(model, training_data, optimizer, device, smoothing):
         # backward
         loss, n_correct = cal_performance(pred, gold, smoothing=smoothing)
         loss.backward()
-
+        # Clip gradients: gradients are modified in place
+        _ = torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
+        _ = torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
         # update parameters
         optimizer.step_and_update_lr()
 
@@ -100,6 +108,7 @@ def eval_epoch(model, validation_data, device):
     n_word_total = 0
     n_word_correct = 0
 
+#    con = 1
     with torch.no_grad():
         for batch in tqdm(
                 validation_data, mininterval=2,
@@ -111,10 +120,16 @@ def eval_epoch(model, validation_data, device):
             # prediction for loss cal
             gold = tgt_seq[:, 1:]
 
+            sssrc_idx2word = validation_data.dataset._src_idx2word
+            tttgt_idx2word = validation_data.dataset._tgt_idx2word
+            
             # forward
             pred = model(src_seq, src_pos, tgt_seq, tgt_pos)
             loss, n_correct = cal_performance(pred, gold, smoothing=False)
-
+            
+#            print(convert_idx_seq_to_instance(tgt_seq.cpu().numpy(),sssrc_idx2word))
+#            print(convert_idx_seq_to_instance(pred.cpu().numpy(),tttgt_idx2word))
+#            con +=1
             # note keeping
             total_loss += loss.item()
 
@@ -194,7 +209,7 @@ def main():
     ''' Main function '''
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-data',type=str, default='data/multi30k/atok.low.pt')
+    parser.add_argument('-data',type=str, default='data/multi30k.atok.low.pt')
 
     parser.add_argument('-epoch', type=int, default=1000)
     parser.add_argument('-batch_size', type=int, default=64)
@@ -283,7 +298,7 @@ def prepare_dataloaders(data, opt):
             src_insts=data['valid']['src'],
             tgt_insts=data['valid']['tgt']),
         num_workers=2,
-        batch_size=opt.batch_size,
+        batch_size=1, # opt.batch_size,
         collate_fn=paired_collate_fn)
     return train_loader, valid_loader
 
