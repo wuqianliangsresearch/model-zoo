@@ -6,9 +6,9 @@ from transformer import Constants
 
 def paired_collate_fn(insts):
     src_insts, tgt_insts = list(zip(*insts))
-    src_insts = collate_fn(src_insts)
-    tgt_insts = collate_fn(tgt_insts)
-    return (*src_insts, *tgt_insts)
+    a,b = collate_fn(src_insts)
+    c,d = collate_fn(tgt_insts)
+    return (a,b, c,d)
 
 def collate_fn(insts):
     ''' Pad the instance to the max seq length in batch '''

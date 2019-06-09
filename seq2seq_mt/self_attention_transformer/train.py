@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data
-import transformer.Constants as Constants
+import Constants as Constants
 from dataset import TranslationDataset, paired_collate_fn
 from Models import Transformer
 from Optim import ScheduledOptim
@@ -195,7 +195,7 @@ def main():
     ''' Main function '''
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-data', required=True)
+    parser.add_argument('-data',type=str, default='data/multi30k/atok.low.pt')
 
     parser.add_argument('-epoch', type=int, default=10)
     parser.add_argument('-batch_size', type=int, default=64)
@@ -215,7 +215,7 @@ def main():
     parser.add_argument('-proj_share_weight', action='store_true')
 
     parser.add_argument('-log', default=None)
-    parser.add_argument('-save_model', default=None)
+    parser.add_argument('-save_model', type=str, default='trained')
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-no_cuda', action='store_true')
@@ -243,9 +243,9 @@ def main():
 
     device = torch.device('cuda' if opt.cuda else 'cpu')
     transformer = Transformer(
-        opt.src_vocab_size,
-        opt.tgt_vocab_size,
-        opt.max_token_seq_len,
+        n_src_vocab = opt.src_vocab_size,
+        n_tgt_vocab = opt.tgt_vocab_size,
+        len_max_seq = opt.max_token_seq_len,
         tgt_emb_prj_weight_sharing=opt.proj_share_weight,
         emb_src_tgt_weight_sharing=opt.embs_share_weight,
         d_model=opt.d_model,

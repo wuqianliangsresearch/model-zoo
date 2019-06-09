@@ -6,14 +6,12 @@ Created on Wed Jun  5 11:18:38 2019
 """
 
 from __future__ import unicode_literals, print_function, division
-from io import open
 
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.nn import init
-from torch import optim
 import torch.nn.functional as F
+import Constants as Constants
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -233,9 +231,9 @@ class PositionalWiseFeedForward(nn.Module):
 
 
 class EncoderLayer(nn.Module):
-	"""Encoder的一层。"""
-
+    """Encoder的第一层。"""
     def __init__(self, model_dim=512, num_heads=8, ffn_dim=2018, dropout=0.0):
+        
         super(EncoderLayer, self).__init__()
 
         self.attention = MultiHeadAttention(model_dim, num_heads, dropout)
@@ -253,7 +251,7 @@ class EncoderLayer(nn.Module):
 
 
 class Encoder(nn.Module):
-	"""多层EncoderLayer组成Encoder。"""
+    """多层EncoderLayer组成Encoder。"""
 
     def __init__(self,
                vocab_size,
@@ -334,7 +332,7 @@ class Decoder(nn.Module):
           [DecoderLayer(model_dim, num_heads, ffn_dim, dropout) for _ in
            range(num_layers)])
 
-        self.seq_embedding = nn.Embedding(vocab_size + 1, model_dim, padding_idx=0)
+        self.seq_embedding = nn.Embedding(vocab_size, model_dim, padding_idx=0)
         self.pos_embedding = PositionalEncoding(model_dim, max_seq_len)
 
     def forward(self, inputs, inputs_len, enc_output, context_attn_mask=None):

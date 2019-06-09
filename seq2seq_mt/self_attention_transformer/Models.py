@@ -11,22 +11,20 @@ class Transformer(nn.Module):
 
     def __init__(
             self,
-            n_src_vocab, 
-            n_tgt_vocab, 
+            n_src_vocab,
+            n_tgt_vocab,
             len_max_seq,
+            tgt_emb_prj_weight_sharing=True,
+            emb_src_tgt_weight_sharing=True,
             d_word_vec=512, 
             d_model=512, 
             d_inner=2048,
             n_layers=6, 
             n_head=8,  
-            dropout=0.1,
-            tgt_emb_prj_weight_sharing=True,
-            emb_src_tgt_weight_sharing=True):
+            dropout=0.1):
         
-        super().__init__()
 
         self.encoder = Encoder(
-            self,
             vocab_size = n_src_vocab,
             max_seq_len = len_max_seq,
             num_layers = n_layers, 
@@ -36,8 +34,7 @@ class Transformer(nn.Module):
             dropout = dropout)
             
         self.decoder = Decoder(
-            self,
-            vocab_size = n_src_vocab, 
+            vocab_size = n_tgt_vocab, 
             max_seq_len = len_max_seq,
             num_layers = n_layers, 
             model_dim = d_model, 
@@ -63,11 +60,11 @@ class Transformer(nn.Module):
 
     def forward(self, src_seq, src_lens, tgt_seq, tgt_lens):
  
-        enc_output, *_ = self.encoder(src_seq, src_lens)
+        enc_output = self.encoder(src_seq, src_lens)
         
         dec_enc_attn_padding_mask = padding_mask(seq_k=src_seq, seq_q=tgt_seq)
         
-        dec_output, *_ = self.decoder(tgt_seq, tgt_lens, enc_output, dec_enc_attn_padding_mask)
+        dec_output  = self.decoder(tgt_seq, tgt_lens, enc_output, dec_enc_attn_padding_mask)
         seq_logit = self.tgt_word_prj(dec_output) * self.x_logit_scale
 
         return seq_logit.view(-1, seq_logit.size(2))
