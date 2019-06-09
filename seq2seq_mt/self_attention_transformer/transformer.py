@@ -19,7 +19,7 @@ class ScaledDotProductAttention(nn.Module):
     """Scaled dot-product attention mechanism."""
 
     def __init__(self, attention_dropout=0.0):
-        super(ScaledDotProductAttention, self).__init__()
+        super(ScaledDotProductAttention, self)
         self.dropout = nn.Dropout(attention_dropout)
         self.softmax = nn.Softmax(dim=2)
 
@@ -53,7 +53,7 @@ class ScaledDotProductAttention(nn.Module):
 class MultiHeadAttention(nn.Module):
 
     def __init__(self, model_dim=512, num_heads=8, dropout=0.0):
-        super(MultiHeadAttention, self).__init__()
+        super(MultiHeadAttention, self)
 
         self.dim_per_head = model_dim // num_heads  # 64
         self.num_heads = num_heads
@@ -116,7 +116,7 @@ class LayerNorm(nn.Module):
             features: 就是模型的维度。论文默认512
             epsilon: 一个很小的数，防止数值计算的除0错误
         """
-        super(LayerNorm, self).__init__()
+        super(LayerNorm, self)
         # alpha
         self.gamma = nn.Parameter(torch.ones(features))
         # beta
@@ -170,11 +170,11 @@ class PositionalEncoding(nn.Module):
             d_model: 一个标量。模型的维度，论文默认是512
             max_seq_len: 一个标量。文本序列的最大长度
         """
-        super(PositionalEncoding, self).__init__()
+        super(PositionalEncoding, self)
         
         # 根据论文给的公式，构造出PE矩阵
         position_encoding = np.array([
-          [pos / np.pow(10000, 2.0 * (j // 2) / d_model) for j in range(d_model)]
+          [pos / np.power(10000, 2.0 * (j // 2) / d_model) for j in range(d_model)]
           for pos in range(max_seq_len)])
         # 偶数列使用sin，奇数列使用cos
         position_encoding[:, 0::2] = np.sin(position_encoding[:, 0::2])
@@ -185,7 +185,7 @@ class PositionalEncoding(nn.Module):
 #         那么为什么需要这个额外的PAD的编码呢？很简单，因为文本序列的长度不一，我们需要对齐，
 #         短的序列我们使用0在结尾补全，我们也需要这些补全位置的编码，也就是`PAD`对应的位置编码
         pad_row = torch.zeros([1, d_model])
-        position_encoding = torch.cat((pad_row, position_encoding))
+        position_encoding = torch.cat((pad_row, torch.FloatTensor(position_encoding)))
         
         # 嵌入操作，+1是因为增加了`PAD`这个补全位置的编码，
         # Word embedding中如果词典增加`UNK`，我们也需要+1。看吧，两者十分相似
@@ -214,7 +214,7 @@ class PositionalEncoding(nn.Module):
 class PositionalWiseFeedForward(nn.Module):
 
     def __init__(self, model_dim=512, ffn_dim=2048, dropout=0.0):
-        super(PositionalWiseFeedForward, self).__init__()
+        super(PositionalWiseFeedForward, self)
         self.w1 = nn.Conv1d(model_dim, ffn_dim, 1)
         self.w2 = nn.Conv1d(model_dim, ffn_dim, 1)
         self.dropout = nn.Dropout(dropout)
@@ -234,7 +234,7 @@ class EncoderLayer(nn.Module):
     """Encoder的第一层。"""
     def __init__(self, model_dim=512, num_heads=8, ffn_dim=2018, dropout=0.0):
         
-        super(EncoderLayer, self).__init__()
+        super(EncoderLayer, self)
 
         self.attention = MultiHeadAttention(model_dim, num_heads, dropout)
         self.feed_forward = PositionalWiseFeedForward(model_dim, ffn_dim, dropout)
@@ -261,7 +261,7 @@ class Encoder(nn.Module):
                num_heads=8,
                ffn_dim=2048,
                dropout=0.0):
-        super(Encoder, self).__init__()
+        super(Encoder, self)
 
         self.encoder_layers = nn.ModuleList(
           [EncoderLayer(model_dim, num_heads, ffn_dim, dropout) for _ in
@@ -287,7 +287,7 @@ class Encoder(nn.Module):
 class DecoderLayer(nn.Module):
 
     def __init__(self, model_dim, num_heads=8, ffn_dim=2048, dropout=0.0):
-        super(DecoderLayer, self).__init__()
+        super(DecoderLayer, self)
 
         # masked multihead
         self.slf_attn = MultiHeadAttention(model_dim, num_heads, dropout)
@@ -324,7 +324,7 @@ class Decoder(nn.Module):
                num_heads=8,
                ffn_dim=2048,
                dropout=0.0):
-        super(Decoder, self).__init__()
+        super(Decoder, self)
 
         self.num_layers = num_layers
 
