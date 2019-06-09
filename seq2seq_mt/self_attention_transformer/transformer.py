@@ -67,6 +67,15 @@ class MultiHeadAttention(nn.Module):
 		# multi-head attention之后需要做layer norm
         self.layer_norm = nn.LayerNorm(model_dim)
 
+#        nn.init.normal_(self.linear_k.weight, mean=0, std=np.sqrt(2.0 / (model_dim + self.dim_per_head)))
+#        nn.init.normal_(self.linear_v.weight, mean=0, std=np.sqrt(2.0 / (model_dim + self.dim_per_head)))
+#        nn.init.normal_(self.linear_q.weight, mean=0, std=np.sqrt(2.0 / (model_dim + self.dim_per_head)))
+        
+        nn.init.xavier_normal_(self.linear_k.weight)
+        nn.init.xavier_normal_(self.linear_v.weight)
+        nn.init.xavier_normal_(self.linear_q.weight)
+        nn.init.xavier_normal_(self.linear_final.weight)
+        
     def forward(self, key, value, query, attn_mask=None):
 		# 残差连接
         residual = query
