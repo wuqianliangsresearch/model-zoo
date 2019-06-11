@@ -41,7 +41,7 @@ class ScaledDotProductAttention(nn.Module):
             attention = attention * scale
         if attn_mask is not None:
             # 给需要mask的地方设置一个负无穷
-            attention = attention.masked_fill_(attn_mask, -np.inf)
+            attention = attention.masked_fill(attn_mask, -np.inf)
         # 计算softmax
         attention = self.softmax(attention)
         # 添加dropout
@@ -50,63 +50,6 @@ class ScaledDotProductAttention(nn.Module):
         context = torch.bmm(attention, v)
         return context, attention
 
-class MultiHeadAttentionNew(nn.Module):
-    ''' Multi-Head Attention module '''
-    
-    def __init__(self, d_model=512, n_head=8, dropout=0.0):
-    #def __init__(self, n_head, d_model, d_k, d_v, dropout=0.1):
-        super(MultiHeadAttention,self).__init__()
-        
-        self.n_head = n_head
-        self.d_k = int(d_model/n_head)
-        self.d_v = int(d_model/n_head)
-
-        self.w_qs = nn.Linear(d_model, d_model) 
-        self.w_ks = nn.Linear(d_model, d_model)
-        self.w_vs = nn.Linear(d_model, d_model)
-        nn.init.normal_(self.w_qs.weight, mean=0, std=np.sqrt(2.0 / (d_model + self.d_k)))
-        nn.init.normal_(self.w_ks.weight, mean=0, std=np.sqrt(2.0 / (d_model + self.d_k)))
-        nn.init.normal_(self.w_vs.weight, mean=0, std=np.sqrt(2.0 / (d_model + self.d_v)))
-
-        self.attention = ScaledDotProductAttention(dropout)
-        self.layer_norm = nn.LayerNorm(d_model)
-
-        self.fc = nn.Linear(d_model, d_model)
-        nn.init.xavier_normal_(self.fc.weight)
-
-        self.dropout = nn.Dropout(dropout)
-
-
-    def forward(self, q, k, v, mask=None):
-
-        d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
-
-        sz_b, len_q, _ = q.size()
-        sz_b, len_k, _ = k.size()
-        sz_b, len_v, _ = v.size()
-        print(len_q,len_k,len_v)
-
-        residual = q
-
-        q = self.w_qs(q).view(sz_b, len_q, n_head, d_k)
-        k = self.w_ks(k).view(sz_b, len_k, n_head, d_k)
-        v = self.w_vs(v).view(sz_b, len_v, n_head, d_v)
-
-        q = q.permute(2, 0, 1, 3).contiguous().view(-1, len_q, d_k) # (n*b) x lq x dk
-        k = k.permute(2, 0, 1, 3).contiguous().view(-1, len_k, d_k) # (n*b) x lk x dk
-        v = v.permute(2, 0, 1, 3).contiguous().view(-1, len_v, d_v) # (n*b) x lv x dv
-
-        mask = mask.repeat(n_head, 1, 1) # (n*b) x .. x ..
-        output, attn = self.attention(q, k, v, np.power(self.d_k, 0.5), mask)
-
-        output = output.view(n_head, sz_b, len_q, d_v)
-        output = output.permute(1, 2, 0, 3).contiguous().view(sz_b, len_q, -1) # b x lq x (n*dv)
-
-        output = self.dropout(self.fc(output))
-        output = self.layer_norm(output + residual)
-
-        return output, attn
-    
 class MultiHeadAttention(nn.Module):
 
     def __init__(self, model_dim=512, num_heads=8, dropout=0.0):
@@ -143,9 +86,6 @@ class MultiHeadAttention(nn.Module):
         scale = (key.size(-1) // num_heads) ** -0.5
 
         # linear projection
-        key = self.linear_k(key)
-        value = self.linear_v(value)
-        query = self.linear_q(query)
 
         q = self.linear_q(query).view(batch_size, len_q, num_heads, dim_per_head)
         k = self.linear_k(key).view(batch_size, len_k, num_heads, dim_per_head)
@@ -188,11 +128,11 @@ def padding_mask(seq_k, seq_q):
     # `PAD` is 0
     pad_mask = seq_k.eq(Constants.PAD)
     pad_mask = pad_mask.unsqueeze(1).expand(-1, len_q, -1)  # shape [B, L_q, L_k]
-    return pad_mask.cuda()
+    return pad_mask
 
 def get_non_pad_mask(seq):
     assert seq.dim() == 2
-    return seq.ne(Constants.PAD).type(torch.float).unsqueeze(-1).cuda()
+    return seq.ne(Constants.PAD).type(torch.float).unsqueeze(-1)
 
 
 def sequence_mask(seq):
@@ -200,7 +140,7 @@ def sequence_mask(seq):
     
     mask = torch.triu(torch.ones((seq_len, seq_len), dtype=torch.uint8),diagonal=1)
     mask = mask.unsqueeze(0).expand(batch_size, -1, -1)  # [B, L, L]
-    return mask.cuda()
+    return mask
 
 def get_sinusoid_encoding_table(n_position, d_hid, padding_idx=None):
     ''' Sinusoid position encoding table '''
@@ -360,8 +300,8 @@ class Decoder(nn.Module):
             get_sinusoid_encoding_table(max_seq_len+1, model_dim, padding_idx=0),
             freeze=True)
 
-    def forward(self, inputs, inputs_len, enc_output, context_attn_mask=None):
-
+    def forward(self, inputs, inputs_len, src_seq, enc_output):
+        context_attn_mask = padding_mask(seq_k=src_seq, seq_q=inputs)
         non_pad_mask = get_non_pad_mask(inputs)
         self_attention_padding_mask = padding_mask(inputs, inputs)
         self_subsequent_mask = sequence_mask(inputs)

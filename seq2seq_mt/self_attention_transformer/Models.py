@@ -61,10 +61,10 @@ class Transformer(nn.Module):
     def forward(self, src_seq, src_lens, tgt_seq, tgt_lens):
         # input  start , word_seq, output word_seq,end
         tgt_seq, tgt_lens = tgt_seq[:, :-1], tgt_lens[:, :-1]
-        dec_enc_attn_padding_mask = padding_mask(seq_k=src_seq, seq_q=tgt_seq)
+        
         enc_output,_ = self.encoder(src_seq, src_lens)
 
-        dec_output,_,_  = self.decoder(tgt_seq, tgt_lens, enc_output, dec_enc_attn_padding_mask)
+        dec_output,_,_  = self.decoder(tgt_seq, tgt_lens, src_seq, enc_output)
         seq_logit = self.tgt_word_prj(dec_output) * self.x_logit_scale
 
         return seq_logit.view(-1, seq_logit.size(2))
