@@ -59,10 +59,8 @@ class Transformer(nn.Module):
             self.encoder.src_word_emb.weight = self.decoder.tgt_word_emb.weight
 
     def forward(self, src_seq, src_lens, tgt_seq, tgt_lens):
-        
         # input  start , word_seq, output word_seq,end
         tgt_seq, tgt_lens = tgt_seq[:, :-1], tgt_lens[:, :-1]
-        
         dec_enc_attn_padding_mask = padding_mask(seq_k=src_seq, seq_q=tgt_seq)
         enc_output,_ = self.encoder(src_seq, src_lens)
 

@@ -49,12 +49,69 @@ class ScaledDotProductAttention(nn.Module):
         # 和V做点积
         context = torch.bmm(attention, v)
         return context, attention
+
+class MultiHeadAttentionNew(nn.Module):
+    ''' Multi-Head Attention module '''
+    
+    def __init__(self, d_model=512, n_head=8, dropout=0.0):
+    #def __init__(self, n_head, d_model, d_k, d_v, dropout=0.1):
+        super(MultiHeadAttention,self).__init__()
+        
+        self.n_head = n_head
+        self.d_k = int(d_model/n_head)
+        self.d_v = int(d_model/n_head)
+
+        self.w_qs = nn.Linear(d_model, d_model) 
+        self.w_ks = nn.Linear(d_model, d_model)
+        self.w_vs = nn.Linear(d_model, d_model)
+        nn.init.normal_(self.w_qs.weight, mean=0, std=np.sqrt(2.0 / (d_model + self.d_k)))
+        nn.init.normal_(self.w_ks.weight, mean=0, std=np.sqrt(2.0 / (d_model + self.d_k)))
+        nn.init.normal_(self.w_vs.weight, mean=0, std=np.sqrt(2.0 / (d_model + self.d_v)))
+
+        self.attention = ScaledDotProductAttention(dropout)
+        self.layer_norm = nn.LayerNorm(d_model)
+
+        self.fc = nn.Linear(d_model, d_model)
+        nn.init.xavier_normal_(self.fc.weight)
+
+        self.dropout = nn.Dropout(dropout)
+
+
+    def forward(self, q, k, v, mask=None):
+
+        d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
+
+        sz_b, len_q, _ = q.size()
+        sz_b, len_k, _ = k.size()
+        sz_b, len_v, _ = v.size()
+        print(len_q,len_k,len_v)
+
+        residual = q
+
+        q = self.w_qs(q).view(sz_b, len_q, n_head, d_k)
+        k = self.w_ks(k).view(sz_b, len_k, n_head, d_k)
+        v = self.w_vs(v).view(sz_b, len_v, n_head, d_v)
+
+        q = q.permute(2, 0, 1, 3).contiguous().view(-1, len_q, d_k) # (n*b) x lq x dk
+        k = k.permute(2, 0, 1, 3).contiguous().view(-1, len_k, d_k) # (n*b) x lk x dk
+        v = v.permute(2, 0, 1, 3).contiguous().view(-1, len_v, d_v) # (n*b) x lv x dv
+
+        mask = mask.repeat(n_head, 1, 1) # (n*b) x .. x ..
+        output, attn = self.attention(q, k, v, np.power(self.d_k, 0.5), mask)
+
+        output = output.view(n_head, sz_b, len_q, d_v)
+        output = output.permute(1, 2, 0, 3).contiguous().view(sz_b, len_q, -1) # b x lq x (n*dv)
+
+        output = self.dropout(self.fc(output))
+        output = self.layer_norm(output + residual)
+
+        return output, attn
     
 class MultiHeadAttention(nn.Module):
 
     def __init__(self, model_dim=512, num_heads=8, dropout=0.0):
 
-        super( MultiHeadAttention, self ).__init__() 
+        super(MultiHeadAttention,self).__init__()
         self.dim_per_head = model_dim // num_heads  # 64
         self.num_heads = num_heads
         self.linear_k = nn.Linear(model_dim, self.dim_per_head * num_heads)
@@ -70,40 +127,45 @@ class MultiHeadAttention(nn.Module):
         nn.init.normal_(self.linear_k.weight, mean=0, std=np.sqrt(2.0 / (model_dim + self.dim_per_head)))
         nn.init.normal_(self.linear_v.weight, mean=0, std=np.sqrt(2.0 / (model_dim + self.dim_per_head)))
         nn.init.normal_(self.linear_q.weight, mean=0, std=np.sqrt(2.0 / (model_dim + self.dim_per_head)))
-        
-#        nn.init.xavier_normal_(self.linear_k.weight)
-#        nn.init.xavier_normal_(self.linear_v.weight)
-#        nn.init.xavier_normal_(self.linear_q.weight)
+
         nn.init.xavier_normal_(self.linear_final.weight)
         
     def forward(self, key, value, query, attn_mask=None):
 		# 残差连接
         residual = query
 
-        dim_per_head = self.dim_per_head
         num_heads = self.num_heads
-#        print('key.shape',key.shape)
-        batch_size = key.size(0)
+        dim_per_head = self.dim_per_head
+        batch_size, len_q, _ = query.size()
+        batch_size, len_k, _ = key.size()
+        batch_size, len_v, _ = value.size()
+        
+        scale = (key.size(-1) // num_heads) ** -0.5
 
         # linear projection
         key = self.linear_k(key)
         value = self.linear_v(value)
         query = self.linear_q(query)
 
-        # split by heads
-        key = key.view(batch_size * num_heads, -1, dim_per_head)
-        value = value.view(batch_size * num_heads, -1, dim_per_head)
-        query = query.view(batch_size * num_heads, -1, dim_per_head)
+        q = self.linear_q(query).view(batch_size, len_q, num_heads, dim_per_head)
+        k = self.linear_k(key).view(batch_size, len_k, num_heads, dim_per_head)
+        v = self.linear_v(value).view(batch_size, len_v, num_heads, dim_per_head)
 
+        query = q.permute(2, 0, 1, 3).contiguous().view(-1, len_q, dim_per_head) # (n*b) x lq x dk
+        key = k.permute(2, 0, 1, 3).contiguous().view(-1, len_k, dim_per_head) # (n*b) x lk x dk
+        value = v.permute(2, 0, 1, 3).contiguous().view(-1, len_v, dim_per_head) # (n*b) x lv x dv
+        
         if attn_mask is not None:
             attn_mask = attn_mask.repeat(num_heads, 1, 1)
+            
         # scaled dot product attention
-        scale = (key.size(-1) // num_heads) ** -0.5
         context, attention = self.dot_product_attention(
           query, key, value, scale, attn_mask)
 
         # concat heads
-        context = context.view(batch_size, -1, dim_per_head * num_heads)
+        #context = context.view(batch_size, -1, dim_per_head * num_heads)
+        context = context.view(num_heads, batch_size, len_q, dim_per_head)
+        context = context.permute(1, 2, 0, 3).contiguous().view(batch_size, len_q, -1) # b x lq x (n*dv)
 
         # final linear projection
         output = self.linear_final(context)
@@ -116,37 +178,6 @@ class MultiHeadAttention(nn.Module):
 
         return output, attention
 
-class LayerNorm(nn.Module):
-    """实现LayerNorm。其实PyTorch已经实现啦，见nn.LayerNorm。"""
-
-    def __init__(self, features, epsilon=1e-6):
-        """Init.
-
-        Args:
-            features: 就是模型的维度。论文默认512
-            epsilon: 一个很小的数，防止数值计算的除0错误
-        """
-        super( LayerNorm, self ).__init__()
-        # alpha
-        self.gamma = nn.Parameter(torch.ones(features))
-        # beta
-        self.beta = nn.Parameter(torch.zeros(features))
-        self.epsilon = epsilon
-
-    def forward(self, x):
-        """前向传播.
-
-        Args:
-            x: 输入序列张量，形状为[B, L, D]
-        """
-        # 根据公式进行归一化
-        # 在X的最后一个维度求均值，最后一个维度就是模型的维度
-        mean = x.mean(-1, keepdim=True)
-        # 在X的最后一个维度求方差，最后一个维度就是模型的维度
-        std = x.std(-1, keepdim=True)
-        return self.gamma * (x - mean) / (std + self.epsilon) + self.beta
-
-
 def padding_mask(seq_k, seq_q):
     ''' For masking out the padding part of key sequence. '''
 
@@ -157,74 +188,39 @@ def padding_mask(seq_k, seq_q):
     # `PAD` is 0
     pad_mask = seq_k.eq(Constants.PAD)
     pad_mask = pad_mask.unsqueeze(1).expand(-1, len_q, -1)  # shape [B, L_q, L_k]
-    return pad_mask
+    return pad_mask.cuda()
 
 def get_non_pad_mask(seq):
     assert seq.dim() == 2
-    return seq.ne(Constants.PAD).type(torch.float).unsqueeze(-1)
+    return seq.ne(Constants.PAD).type(torch.float).unsqueeze(-1).cuda()
 
 
 def sequence_mask(seq):
     batch_size, seq_len = seq.size()
     
-    mask = torch.triu(torch.ones((seq_len, seq_len), dtype=torch.uint8),diagonal=1).cuda()
+    mask = torch.triu(torch.ones((seq_len, seq_len), dtype=torch.uint8),diagonal=1)
     mask = mask.unsqueeze(0).expand(batch_size, -1, -1)  # [B, L, L]
-    return mask
+    return mask.cuda()
 
-def get_non_pad_mask(seq):
-    assert seq.dim() == 2
-    return seq.ne(Constants.PAD).type(torch.float).unsqueeze(-1)
+def get_sinusoid_encoding_table(n_position, d_hid, padding_idx=None):
+    ''' Sinusoid position encoding table '''
 
+    def cal_angle(position, hid_idx):
+        return position / np.power(10000, 2 * (hid_idx // 2) / d_hid)
 
-class PositionalEncoding(nn.Module):
-    
-    def __init__(self, d_model, max_seq_len):
-        """初始化。
-        
-        Args:
-            d_model: 一个标量。模型的维度，论文默认是512
-            max_seq_len: 一个标量。文本序列的最大长度
-        """
-        super( PositionalEncoding, self ).__init__()
-        # 根据论文给的公式，构造出PE矩阵
-        position_encoding = np.array([
-          [pos / np.power(10000, 2.0 * (j // 2) / d_model) for j in range(d_model)]
-          for pos in range(max_seq_len)])
-        # 偶数列使用sin，奇数列使用cos
-        position_encoding[:, 0::2] = np.sin(position_encoding[:, 0::2])
-        position_encoding[:, 1::2] = np.cos(position_encoding[:, 1::2])
+    def get_posi_angle_vec(position):
+        return [cal_angle(position, hid_j) for hid_j in range(d_hid)]
 
-#         在PE矩阵的第一行，加上一行全是0的向量，代表这`PAD`的positional encoding
-#         在word embedding中也经常会加上`UNK`，代表位置单词的word embedding，两者十分类似
-#         那么为什么需要这个额外的PAD的编码呢？很简单，因为文本序列的长度不一，我们需要对齐，
-#         短的序列我们使用0在结尾补全，我们也需要这些补全位置的编码，也就是`PAD`对应的位置编码
-        pad_row = torch.zeros([1, d_model])
-        position_encoding = torch.cat((pad_row, torch.FloatTensor(position_encoding)))
-        
-        # 嵌入操作，+1是因为增加了`PAD`这个补全位置的编码，
-        # Word embedding中如果词典增加`UNK`，我们也需要+1。看吧，两者十分相似
-        self.position_encoding = nn.Embedding(max_seq_len + 1, d_model)
-        self.position_encoding.weight = nn.Parameter(position_encoding,
-                                                     requires_grad=False)
-    def forward(self, input_len):
-        """神经网络的前向传播。
+    sinusoid_table = np.array([get_posi_angle_vec(pos_i) for pos_i in range(n_position)])
 
-        Args:
-          input_len: 一个张量，形状为[BATCH_SIZE, 1]。每一个张量的值代表这一批文本序列中对应的长度。
+    sinusoid_table[:, 0::2] = np.sin(sinusoid_table[:, 0::2])  # dim 2i
+    sinusoid_table[:, 1::2] = np.cos(sinusoid_table[:, 1::2])  # dim 2i+1
 
-        Returns:
-          返回这一批序列的位置编码，进行了对齐。
-        """
-        
-        # 找出这一批序列的最大长度
-#        max_len = torch.max(input_len)
+    if padding_idx is not None:
+        # zero vector for padding dimension
+        sinusoid_table[padding_idx] = 0.
 
-#        tensor = torch.cuda.LongTensor if input_len.is_cuda else torch.LongTensor
-        # 对每一个序列的位置进行对齐，在原序列位置的后面补上0
-        # 这里range从1开始也是因为要避开PAD(0)的位置
-#        input_pos = tensor(
-#          [list(range(1, len + 1)) + [0] * (max_len - len) for len in input_len])
-        return self.position_encoding(input_len)
+    return torch.FloatTensor(sinusoid_table)
 
 class PositionalWiseFeedForward(nn.Module):
 
@@ -285,19 +281,24 @@ class Encoder(nn.Module):
            range(num_layers)])
 
         self.seq_embedding = nn.Embedding(vocab_size, model_dim, padding_idx=0)
-        self.pos_embedding = PositionalEncoding(model_dim, max_seq_len)
+        #self.pos_embedding = PositionalEncoding(model_dim, max_seq_len)
+        self.pos_embedding = nn.Embedding.from_pretrained(
+            get_sinusoid_encoding_table(max_seq_len+1, model_dim, padding_idx=0),
+            freeze=True)
 
     def forward(self, inputs, inputs_len):
 
         non_pad_mask = get_non_pad_mask(inputs)
         self_attention_mask = padding_mask(inputs, inputs)
         
-        output = self.seq_embedding(inputs) # 映射到 seq_len x d_model
-        output += self.pos_embedding(inputs_len)
+        output = self.seq_embedding(inputs) + self.pos_embedding(inputs_len) # 映射到 seq_len x d_model
+                    
 
         attentions = []
         for encoder in self.encoder_layers:
-            output, attention = encoder(output, non_pad_mask, self_attention_mask)
+            output, attention = encoder(output, 
+                non_pad_mask, 
+                self_attention_mask)
             attentions.append(attention)
 
         return output, attentions
@@ -354,7 +355,10 @@ class Decoder(nn.Module):
            range(num_layers)])
 
         self.seq_embedding = nn.Embedding(vocab_size, model_dim, padding_idx=0)
-        self.pos_embedding = PositionalEncoding(model_dim, max_seq_len)
+        #self.pos_embedding = PositionalEncoding(model_dim, max_seq_len)
+        self.pos_embedding = nn.Embedding.from_pretrained(
+            get_sinusoid_encoding_table(max_seq_len+1, model_dim, padding_idx=0),
+            freeze=True)
 
     def forward(self, inputs, inputs_len, enc_output, context_attn_mask=None):
 
