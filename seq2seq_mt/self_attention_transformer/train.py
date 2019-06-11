@@ -15,7 +15,6 @@ import Constants as Constants
 from dataset import TranslationDataset, paired_collate_fn
 from Models import Transformer
 from Optim import ScheduledOptim
-from preprocess import *
 
 def cal_performance(pred, gold, smoothing=False):
     ''' Apply label smoothing if needed '''
@@ -35,6 +34,7 @@ def cal_loss(pred, gold, smoothing):
     ''' Calculate cross entropy loss, apply label smoothing if needed. '''
 
     gold = gold.contiguous().view(-1)
+
     if smoothing:
         eps = 0.1
         n_class = pred.size(1)
@@ -66,24 +66,17 @@ def train_epoch(model, training_data, optimizer, device, smoothing):
             desc='  - (Training)   ', leave=False):
 
         # prepare data
-        src_seq, src_len, tgt_seq, tgt_len = map(lambda x: x.to(device), batch)
+        src_seq, src_pos, tgt_seq, tgt_pos = map(lambda x: x.to(device), batch)
         gold = tgt_seq[:, 1:]
 
-#        sssrc_idx2word = training_data.dataset._src_idx2word
-#        tttgt_idx2word = training_data.dataset._tgt_idx2word
-
-#        print(convert_idx_seq_to_instance(src_seq.cpu().numpy(),sssrc_idx2word))
-#        print(convert_idx_seq_to_instance(tgt_seq.cpu().numpy(),tttgt_idx2word))
         # forward
         optimizer.zero_grad()
-        pred = model(src_seq, src_len, tgt_seq, tgt_len)
+        pred = model(src_seq, src_pos, tgt_seq, tgt_pos)
 
         # backward
         loss, n_correct = cal_performance(pred, gold, smoothing=smoothing)
         loss.backward()
-        # Clip gradients: gradients are modified in place
-        _ = torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
-        _ = torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
+
         # update parameters
         optimizer.step_and_update_lr()
 
@@ -97,6 +90,7 @@ def train_epoch(model, training_data, optimizer, device, smoothing):
 
     loss_per_word = total_loss/n_word_total
     accuracy = n_word_correct/n_word_total
+    print('train: loss:',loss_per_word,accuracy)
     return loss_per_word, accuracy
 
 def eval_epoch(model, validation_data, device):
@@ -108,7 +102,6 @@ def eval_epoch(model, validation_data, device):
     n_word_total = 0
     n_word_correct = 0
 
-#    con = 1
     with torch.no_grad():
         for batch in tqdm(
                 validation_data, mininterval=2,
@@ -116,20 +109,12 @@ def eval_epoch(model, validation_data, device):
 
             # prepare data
             src_seq, src_pos, tgt_seq, tgt_pos = map(lambda x: x.to(device), batch)
-            
-            # prediction for loss cal
             gold = tgt_seq[:, 1:]
 
-            sssrc_idx2word = validation_data.dataset._src_idx2word
-            tttgt_idx2word = validation_data.dataset._tgt_idx2word
-            
             # forward
             pred = model(src_seq, src_pos, tgt_seq, tgt_pos)
             loss, n_correct = cal_performance(pred, gold, smoothing=False)
-            
-#            print(convert_idx_seq_to_instance(tgt_seq.cpu().numpy(),sssrc_idx2word))
-#            print(convert_idx_seq_to_instance(pred.cpu().numpy(),tttgt_idx2word))
-#            con +=1
+
             # note keeping
             total_loss += loss.item()
 
@@ -209,16 +194,14 @@ def main():
     ''' Main function '''
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-data',type=str, default='data/multi30k.atok.low.pt')
+    parser.add_argument('-data', required=True)
 
-    parser.add_argument('-epoch', type=int, default=1000)
+    parser.add_argument('-epoch', type=int, default=10)
     parser.add_argument('-batch_size', type=int, default=64)
 
     #parser.add_argument('-d_word_vec', type=int, default=512)
     parser.add_argument('-d_model', type=int, default=512)
     parser.add_argument('-d_inner_hid', type=int, default=2048)
-    parser.add_argument('-d_k', type=int, default=64)
-    parser.add_argument('-d_v', type=int, default=64)
 
     parser.add_argument('-n_head', type=int, default=8)
     parser.add_argument('-n_layers', type=int, default=6)
@@ -229,7 +212,7 @@ def main():
     parser.add_argument('-proj_share_weight', action='store_true')
 
     parser.add_argument('-log', default=None)
-    parser.add_argument('-save_model', type=str, default='trained')
+    parser.add_argument('-save_model', default=None)
     parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 
     parser.add_argument('-no_cuda', action='store_true')
@@ -257,9 +240,9 @@ def main():
 
     device = torch.device('cuda' if opt.cuda else 'cpu')
     transformer = Transformer(
-        n_src_vocab = opt.src_vocab_size,
-        n_tgt_vocab = opt.tgt_vocab_size,
-        len_max_seq = opt.max_token_seq_len,
+        opt.src_vocab_size,
+        opt.tgt_vocab_size,
+        opt.max_token_seq_len,
         tgt_emb_prj_weight_sharing=opt.proj_share_weight,
         emb_src_tgt_weight_sharing=opt.embs_share_weight,
         d_model=opt.d_model,
@@ -298,7 +281,7 @@ def prepare_dataloaders(data, opt):
             src_insts=data['valid']['src'],
             tgt_insts=data['valid']['tgt']),
         num_workers=2,
-        batch_size=1, # opt.batch_size,
+        batch_size=opt.batch_size,
         collate_fn=paired_collate_fn)
     return train_loader, valid_loader
 
