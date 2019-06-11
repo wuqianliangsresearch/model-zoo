@@ -16,39 +16,27 @@ import Constants as Constants
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class ScaledDotProductAttention(nn.Module):
-    """Scaled dot-product attention mechanism."""
+    ''' Scaled Dot-Product Attention '''
 
-    def __init__(self, attention_dropout=0.0):
-        super( ScaledDotProductAttention, self ).__init__() 
-        self.dropout = nn.Dropout(attention_dropout)
+    def __init__(self, temperature, attn_dropout=0.1):
+        super(ScaledDotProductAttention,self).__init__()
+        self.temperature = temperature
+        self.dropout = nn.Dropout(attn_dropout)
         self.softmax = nn.Softmax(dim=2)
 
-    def forward(self, q, k, v, scale=None, attn_mask=None):
-        """前向传播.
+    def forward(self, q, k, v, mask=None):
 
-        Args:
-            q: Queries张量，形状为[B, L_q, D_q]
-            k: Keys张量，形状为[B, L_k, D_k]
-            v: Values张量，形状为[B, L_v, D_v]，一般来说就是k
-            scale: 缩放因子，一个浮点标量
-            attn_mask: Masking张量，形状为[B, L_q, L_k]
+        attn = torch.bmm(q, k.transpose(1, 2))
+        attn = attn / self.temperature
 
-        Returns:
-            上下文张量和attetention张量
-        """
-        attention = torch.bmm(q, k.transpose(1, 2))
-        if scale:
-            attention = attention * scale
-        if attn_mask is not None:
-            # 给需要mask的地方设置一个负无穷
-            attention = attention.masked_fill(attn_mask, -np.inf)
-        # 计算softmax
-        attention = self.softmax(attention)
-        # 添加dropout
-        attention = self.dropout(attention)
-        # 和V做点积
-        context = torch.bmm(attention, v)
-        return context, attention
+        if mask is not None:
+            attn = attn.masked_fill(mask, -np.inf)
+
+        attn = self.softmax(attn)
+        attn = self.dropout(attn)
+        output = torch.bmm(attn, v)
+
+        return output, attn
 
 class MultiHeadAttention(nn.Module):
 
@@ -61,7 +49,7 @@ class MultiHeadAttention(nn.Module):
         self.linear_v = nn.Linear(model_dim, self.dim_per_head * num_heads)
         self.linear_q = nn.Linear(model_dim, self.dim_per_head * num_heads)
 
-        self.dot_product_attention = ScaledDotProductAttention(dropout)
+        self.dot_product_attention = ScaledDotProductAttention(temperature=np.power(self.dim_per_head, 0.5))
         self.linear_final = nn.Linear(model_dim, model_dim)
         self.dropout = nn.Dropout(dropout)
 		# multi-head attention之后需要做layer norm
@@ -83,7 +71,7 @@ class MultiHeadAttention(nn.Module):
         batch_size, len_k, _ = key.size()
         batch_size, len_v, _ = value.size()
         
-        scale = (key.size(-1) // num_heads) ** -0.5
+        #scale = (key.size(-1) / num_heads) ** -0.5
 
         # linear projection
 
@@ -100,7 +88,7 @@ class MultiHeadAttention(nn.Module):
             
         # scaled dot product attention
         context, attention = self.dot_product_attention(
-          query, key, value, scale, attn_mask)
+          query, key, value, attn_mask)
 
         # concat heads
         #context = context.view(batch_size, -1, dim_per_head * num_heads)
@@ -140,7 +128,7 @@ def sequence_mask(seq):
     
     mask = torch.triu(torch.ones((seq_len, seq_len), dtype=torch.uint8),diagonal=1)
     mask = mask.unsqueeze(0).expand(batch_size, -1, -1)  # [B, L, L]
-    return mask
+    return mask.cuda()
 
 def get_sinusoid_encoding_table(n_position, d_hid, padding_idx=None):
     ''' Sinusoid position encoding table '''
