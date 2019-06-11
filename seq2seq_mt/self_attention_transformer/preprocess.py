@@ -1,7 +1,8 @@
+# encoding: utf-8
 ''' Handling the data io '''
 import argparse
 import torch
-import transformer.Constants as Constants
+import Constants as Constants
 
 def read_instances_from_file(inst_file, max_sent_len, keep_case):
     ''' Convert file into word seq lists and vocab '''
@@ -64,6 +65,10 @@ def build_vocab_idx(word_insts, min_word_count):
 def convert_instance_to_idx_seq(word_insts, word2idx):
     ''' Mapping words to idx sequence. '''
     return [[word2idx.get(w, Constants.UNK) for w in s] for s in word_insts]
+
+def convert_idx_seq_to_instance(idx_seq, idx2word):
+    ''' Mapping words to idx sequence. '''
+    return [[idx2word.get(idx, Constants.UNK_WORD) for idx in s] for s in idx_seq]
 
 def main():
     ''' Main function '''
