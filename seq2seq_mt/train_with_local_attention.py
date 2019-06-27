@@ -347,16 +347,12 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
         else:
             
             enc_output, (enc_hidden, enc_c) = encoder(input_tensor[ei], enc_hidden, enc_c)
-	#print(encoder_output,encoder_hidden)
-#        print(enc_output.shape)
+
         enc_outputs[ei] = enc_hidden[_num_layers-1,0]
     
     dec_hidden,dec_c, dec_ht_hat = decoder.initHidden() 
     
     decoder_input = torch.tensor([[SOS_token]], device=device)
-
-
-#    decoder_attentions = torch.zeros(max_length, max_length)
     
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
@@ -489,11 +485,6 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
             
             encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
             encoder_outputs[ei] = encoder_output[0, 0]
-    
-    
-#        C = selftanh(Cout(encoder_hidden)).cuda()
-#        
-#        decoder_hidden = C
         
         decoder_input = torch.tensor([[SOS_token]], device=device)
     
