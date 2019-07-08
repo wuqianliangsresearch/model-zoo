@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 from torch.nn import init
 import torch.backends.cudnn as cudnn
-#import cv2 
+import cv2 
 from torch.utils.data import Dataset, DataLoader
 
 
@@ -101,41 +101,50 @@ def PCA_AUG(img):
 # -----------------ready the dataset--------------------------
 def opencvLoad(imgPath,resizeH,resizeW):
     image = cv2.imread(imgPath)
+#    print(imgPath)
     image = cv2.resize(image, (resizeH, resizeW), interpolation=cv2.INTER_CUBIC)
     image = image.astype(np.float32)
     image = np.transpose(image, (2, 1, 0))  
     image = torch.from_numpy(image)
     return image
     
-class LoadPartDataset(Dataset,flag='train'):
-    def __init__(self, txt):
+class LoadPartDataset(Dataset):
+    def __init__(self, txt ,flag='train'):
         fh = open(txt, 'r')
-        imgs = []
+        self.imgs = []
         for line in fh:
+            
             line = line.strip('\n')
             line = line.rstrip()
             words = line.split()
             labelList = int(words[1])
             imageList = words[0]
-            imgs.append((imageList, labelList))
-        self.imgs = imgs
+#            print(imageList, labelList)
+            self.imgs.append((imageList, labelList))
+            
+        self.flag = flag
             
     def __getitem__(self, item):
+
         image, label = self.imgs[item]
-           
-        image = '/home/wuqianliang/ILSVRC2012_img_train'.join(image)
         
-        if flag is 'val':
-            image = '/home/wuqianliang/ILSVRC2012_img_val'.join(image)
-        elif flag is 'test':
-            image = '/home/wuqianliang/ILSVRC2012_img_test'.join(image)
+        image = '/home/wuqianliang/ILSVRC2012_img_train/'+image
+        
+        if self.flag == 'val':
+            image = '/home/wuqianliang/ILSVRC2012_img_val/'+image
+            
+        elif self.flag == 'test':
+            image = '/home/wuqianliang/ILSVRC2012_img_test'+image
+            
         img = opencvLoad(image,227,227)
+        
         return img,label
+    
     def __len__(self):
         return len(self.imgs)
         
 trainSet =LoadPartDataset(txt=root+'train.txt')
-test_data=LoadPartDataset(txt=root+'val.txt', flag='val')
+test_data=LoadPartDataset(txt=root+'val.txt', flag = 'val')
 #
 train_loader = DataLoader(dataset=trainSet, batch_size=64, shuffle=True)
 test_loader = DataLoader(dataset=test_data, batch_size=64)
@@ -146,6 +155,7 @@ test_loader = DataLoader(dataset=test_data, batch_size=64)
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
+        
         self.conv1 = nn.Sequential(
             nn.Conv2d(3, 96, 11, 4, 0),
             nn.ReLU(),
@@ -207,13 +217,15 @@ class Net(nn.Module):
  
  
 model = Net()
+model.cuda()
+cudnn.benchmark = True
 
 # 参数初始化
 for layer in model.modules():
     if isinstance(layer, nn.Linear):
         print(layer)
         param_shape = layer.weight.shape
-        layer.weight.data = torch.from_numpy(np.random.normal(0, 0.5, size=param_shape)).float()
+        layer.weight.data = torch.from_numpy(np.random.normal(0, 0.5, size=param_shape)).float().cuda()
         
 finetune = None
 #finetune = r'./model/_iter_99.pth'
@@ -230,44 +242,44 @@ if finetune is not None:
     model.load_state_dict(pretrained_dict)
  
 #model = torch.nn.DataParallel(model, device_ids=[0])
-model.cuda()
-cudnn.benchmark = True
+
 #print(model)
- 
- 
+
 #optimizer = torch.optim.Adam(model.parameters())
-#loss_func = torch.nn.CrossEntropyLoss()
- 
 
 if __name__ == '__main__':
-    
-#    input_tensor =  torch.randn(( 64, 3, 227, 227)).cuda()
-#
-#    output = model(input_tensor)
-#    print(output)
-#    exit()
-    
+     
     # updata net
     lr = 1e-5
     loss_func = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=0.0005)
+    
+    train_loss = 0.
+    train_acc = 0.
+    
     for epoch in range(10000):
         print('epoch {}'.format(epoch + 1))
         # training-----------------------------
-        train_loss = 0.
-        train_acc = 0.
+        iters = 1
         for trainData, trainLabel in train_loader:
             trainData, trainLabel = trainData.cuda(), trainLabel.cuda()
             out = model(trainData)
             loss = loss_func(out, trainLabel)
-            train_loss += loss.data[0]
-            pred = torch.max(out, 1)[1]
+            train_loss += loss.item()
+            pred = torch.max(out.detach(), 1)[1]
             train_correct = (pred == trainLabel).sum()
-            train_acc += train_correct.data[0]
+            train_acc += train_correct.item()
             optimizer.zero_grad()
             loss.backward()
+            # Clip gradients: gradients are modified in place
+            _ = torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
+            _ = torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
+    
             optimizer.step()
-        #  if epoch % 100 == 0:
+            total_len = 64*iters
+            iters +=2
+            print('Train Loss: {:.6f}, Acc: {:.6f}'.format(train_loss / (total_len), train_acc / (total_len)))
+        #if epoch % 100 == 0:
         print('Train Loss: {:.6f}, Acc: {:.6f}'.format(train_loss / (len(trainSet)), train_acc / (len(trainSet))))
      
         if (epoch + 1) % 10 == 0:
