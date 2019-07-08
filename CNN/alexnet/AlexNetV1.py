@@ -146,7 +146,7 @@ class LoadPartDataset(Dataset):
 trainSet =LoadPartDataset(txt=root+'train.txt')
 test_data=LoadPartDataset(txt=root+'val.txt', flag = 'val')
 #
-train_loader = DataLoader(dataset=trainSet, batch_size=64, shuffle=True)
+train_loader = DataLoader(dataset=trainSet, batch_size=64, shuffle=True, pin_memory=True,num_workers=10)
 test_loader = DataLoader(dataset=test_data, batch_size=64)
  
  
@@ -277,11 +277,14 @@ if __name__ == '__main__':
     
             optimizer.step()
             total_len = 64*iters
-            iters +=2
+            iters +=1
             print('Train Loss: {:.6f}, Acc: {:.6f}'.format(train_loss / (total_len), train_acc / (total_len)))
+
         #if epoch % 100 == 0:
         print('Train Loss: {:.6f}, Acc: {:.6f}'.format(train_loss / (len(trainSet)), train_acc / (len(trainSet))))
-     
+        train_loss = 0.0
+        train_acc = 0.0
+        
         if (epoch + 1) % 10 == 0:
             sodir = './model/_iter_{}.pth'.format(epoch)
             print( '[5] Model save {}'.format(sodir))
