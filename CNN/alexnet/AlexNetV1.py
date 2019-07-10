@@ -146,7 +146,7 @@ class LoadPartDataset(Dataset):
 trainSet =LoadPartDataset(txt=root+'train.txt')
 test_data=LoadPartDataset(txt=root+'val.txt', flag = 'val')
 #
-train_loader = DataLoader(dataset=trainSet, batch_size=64, shuffle=True, pin_memory=True,num_workers=10)
+train_loader = DataLoader(dataset=trainSet, batch_size=64, shuffle=True, pin_memory=True,num_workers=8)
 test_loader = DataLoader(dataset=test_data, batch_size=64)
  
  
@@ -254,13 +254,15 @@ if __name__ == '__main__':
     loss_func = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=0.0005)
     
-    train_loss = 0.
-    train_acc = 0.
+
     
     for epoch in range(10000):
         print('epoch {}'.format(epoch + 1))
         # training-----------------------------
         iters = 1
+        train_loss = 0.
+        train_acc = 0.
+        model.train()
         for trainData, trainLabel in train_loader:
             trainData, trainLabel = trainData.cuda(), trainLabel.cuda()
             out = model(trainData)
@@ -278,7 +280,11 @@ if __name__ == '__main__':
             optimizer.step()
             total_len = 64*iters
             iters +=1
-            print('Train Loss: {:.6f}, Acc: {:.6f}'.format(train_loss / (total_len), train_acc / (total_len)))
+            if iters > 50:
+                print('In epoch train Loss: {:.6f}, Acc: {:.6f}'.format(train_loss / (total_len), train_acc / (total_len)))
+                train_loss = 0.
+                train_acc = 0.
+                iters = 1
 
         #if epoch % 100 == 0:
         print('Train Loss: {:.6f}, Acc: {:.6f}'.format(train_loss / (len(trainSet)), train_acc / (len(trainSet))))
@@ -288,9 +294,25 @@ if __name__ == '__main__':
         if (epoch + 1) % 10 == 0:
             sodir = './model/_iter_{}.pth'.format(epoch)
             print( '[5] Model save {}'.format(sodir))
-            torch.save(model.module.state_dict(), sodir)
+            torch.save(model.state_dict(), sodir)
+            
      
         # adjust
         if (epoch + 1)% 100 == 0:
             lr = lr / 10
             optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+            
+        # evaluation--------------------------------
+        
+        model.eval()
+        eval_loss = 0.
+        eval_acc = 0.
+        for trainData, trainLabel in test_loader:
+            trainData, trainLabel = trainData, trainLabel
+            out = model(trainData)
+            loss = loss_func(out, trainData)
+            eval_loss += loss.data[0]
+            pred = torch.max(out, 1)[1]
+            num_correct = (pred == trainData).sum()
+            eval_acc += num_correct.data[0]
+        print('Test Loss: {:.6f}, Acc: {:.6f}'.format(eval_loss / (len(test_data)), eval_acc / (len(test_data))))
