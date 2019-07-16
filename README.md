@@ -9,7 +9,7 @@
 7. ELMo "Deep contextualized word representations" [code](https://github.com/wuqianliangsresearch/ELMoForManyLangs)
 8. GPT "Improving Language Understanding by Generative Pre-Training"
 9. Bert "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding"
-10. "Transformer-XL: Attentive Language Models Beyond a Fixed-Length Context"
+10. "Transformer-XL: Attentive Language Models Beyond a Fixed-Length Context"  [code](https://github.com/kimiyoung/transformer-xl)
 
 ### CNN
 1. alexnet "ImageNet Classification with Deep Convolutional Neural Networks" [code](https://github.com/wuqianliangsresearch/model-zoo/blob/master/CNN/alexnet)
