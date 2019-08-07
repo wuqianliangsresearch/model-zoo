@@ -10,7 +10,7 @@
 8. GPT "Improving Language Understanding by Generative Pre-Training"
 9. Bert "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding"
 10. "Transformer-XL: Attentive Language Models Beyond a Fixed-Length Context"  [code](https://github.com/kimiyoung/transformer-xl)
-
+11. "XLNet: Generalized Autoregressive Pretraining for Language Understanding" [code](https://github.com/graykode/xlnet-Pytorch)
 ### CNN
 1. alexnet "ImageNet Classification with Deep Convolutional Neural Networks" [code](https://github.com/wuqianliangsresearch/model-zoo/blob/master/CNN/alexnet)
 2. vgg "VERY DEEP CONVOLUTIONAL NETWORKS FOR LARGE-SCALE IMAGE RECOGNITION" [code]
