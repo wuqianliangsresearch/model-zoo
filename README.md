@@ -14,3 +14,6 @@
 ### CNN
 1. alexnet "ImageNet Classification with Deep Convolutional Neural Networks" [code](https://github.com/wuqianliangsresearch/model-zoo/blob/master/CNN/alexnet)
 2. vgg "VERY DEEP CONVOLUTIONAL NETWORKS FOR LARGE-SCALE IMAGE RECOGNITION" [code]
+
+### NN BASE
+1. Understanding the difficulty of training deep feedforward neural networks
